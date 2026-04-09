@@ -1,11 +1,29 @@
+#include <Wire.h>
+#include <VL53L0X.h>
+
 const int MOTOR_PIN = 9;
 char buf[32];
 int bufPos = 0;
 
+VL53L0X sensor;
+bool sensorOK = false;
+
 void setup() {
   Serial.begin(9600);
   pinMode(MOTOR_PIN, OUTPUT);
-  // Startup: 2 pulses
+
+  Wire.begin();
+  Serial.println("DEBUG: Wire started");
+  sensor.setTimeout(500);
+  if (sensor.init()) {
+    sensor.startContinuous();
+    sensorOK = true;
+    Serial.println("DEBUG: VL53L0X OK");
+  } else {
+    Serial.println("DEBUG: VL53L0X FAILED - check wiring");
+  }
+
+  // Startup pulse
   digitalWrite(MOTOR_PIN, HIGH); delay(150);
   digitalWrite(MOTOR_PIN, LOW);  delay(150);
   digitalWrite(MOTOR_PIN, HIGH); delay(150);
@@ -34,16 +52,13 @@ void vibrate(int level) {
 }
 
 void handleCommand() {
-  // ZONE 0 3  → buf = "ZONE 0 3"
-  if (buf[0]=='Z' && buf[1]=='O' && buf[4]==' ' && buf[6]==' ') {
+  if (buf[0]=='Z' && buf[1]=='O') {
     int level = buf[7] - '0';
     vibrate(level);
   }
-  // SYS 0
-  else if (buf[0]=='S' && buf[1]=='Y') {
-    vibrate(3);
-  }
 }
+
+unsigned long lastTof = 0;
 
 void loop() {
   while (Serial.available()) {
@@ -56,6 +71,15 @@ void loop() {
       }
     } else if (bufPos < 31) {
       buf[bufPos++] = c;
+    }
+  }
+
+  if (sensorOK && millis() - lastTof > 200) {
+    lastTof = millis();
+    int dist = sensor.readRangeContinuousMillimeters();
+    if (!sensor.timeoutOccurred()) {
+      Serial.print("TOF:");
+      Serial.println(dist);
     }
   }
 }

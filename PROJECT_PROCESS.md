@@ -469,6 +469,97 @@ This is the first time the real compute unit (Pi) ran the real detection pipelin
 
 ---
 
+## Step 18 — Hardware Assembly Day: Arduino UNO + Motor + VL53L0X (09.04.2026)
+
+Today was the first real hardware assembly session with Anna. Goal: connect all physical components to Arduino UNO, flash the firmware, and achieve an end-to-end pipeline from camera detection → ZONE command → motor vibration.
+
+**Arduino UNO confirmed (not Nano Every):**
+
+The available Arduino was an UNO R3, not the originally planned Nano Every. This required a different FQBN for arduino-cli:
+- Nano Every: `arduino:megaavr:nona4809` (wrong)
+- UNO: `arduino:avr:uno` ✅
+
+arduino-cli was installed on the Pi via the official curl script (not apt, which was outdated):
+```bash
+curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+```
+
+**Motor: DFRobot Gravity Vibration Module V1.1:**
+
+The vibration motor used is a DFRobot Gravity module — 3-wire (GND / + / Signal), with an onboard driver. This means no transistor or separate driver circuit needed. Signal wire connects directly to a digital PWM pin (Pin 9).
+
+Wiring: Signal → Pin 9 | + → 5V | GND → GND
+
+**`motor_controller.ino` — firmware flashed to Arduino UNO:**
+
+The firmware handles two things:
+1. Listens on Serial (9600 baud) for `ZONE X Y` commands from the Pi
+2. Drives vibration motor with 4 levels (0=off, 1=short pulse, 2=double tap, 3=triple burst)
+
+Key learning: Arduino UNO resets when the serial port is opened (DTR pin). The Pi must wait 2 seconds after opening the port before sending commands. Also, Arduino's `String` class caused command parsing to fail silently on AVR — replaced with `char buf[32]` and direct character comparison (`buf[0]=='Z' && buf[1]=='O'`), which works reliably.
+
+**End-to-end motor vibration confirmed working:**
+
+With `sensor_bridge.py --serial-port /dev/ttyACM0` running on the Pi, YOLOv8 detecting objects through the webcam, and ZONE commands flowing over serial to the Arduino — **the motor vibrated in response to real detections**. This is the first full end-to-end confirmation of the core haptic feedback loop.
+
+```
+Pi webcam → YOLOv8 → ZONE 0 2 → Arduino serial → vibrate(2) → motor ✅
+```
+
+**VL53L0X ToF sensor: moved from Pi to Arduino UNO I2C:**
+
+The VL53L0X distance sensor was previously attempted on the Pi's I2C bus but never registered on `i2cdetect`. Anna suggested moving it to Arduino UNO I2C instead (A4=SDA, A5=SCL) — a better architecture since the Arduino can read distance continuously and send `TOF:distance` over serial to the Pi.
+
+The Pololu VL53L0X Arduino library was installed:
+```bash
+arduino-cli lib install "VL53L0X"
+```
+
+Wiring: VIN → 5V | GND → GND | SDA → A4 | SCL → A5
+
+**VL53L0X diagnosis: sensor appears damaged:**
+
+Despite correct wiring (verified: yellow=SCL→A5, gray=SDA→A4, red=VIN, black=GND), the sensor does not respond on I2C. A debug sketch confirmed:
+- `DEBUG: Wire started` prints correctly → Arduino I2C bus is working
+- `sensor.init()` hangs indefinitely → no device responds on the bus
+- Neither 3.3V nor 5V on VIN makes a difference
+
+The sensor likely suffered permanent damage during an earlier session when wiring to the Pi was incorrect. **The VL53L0X is to be considered defective and needs replacement.**
+
+**What still works without the sensor:**
+
+The motor_controller.ino handles `sensorOK = false` gracefully — motor vibration via ZONE commands continues to work normally. The `sensor_bridge.py` also has a mock ToF fallback. The Phase 1 demo can proceed without real distance data.
+
+**GitHub repository created:**
+
+A GitHub repo was created for the project. Collaborators added:
+- Faruk (@726f6f6b)
+- Laura (@luu-ra)
+
+All project files pushed (excluding node_modules, .pem keys, yolov8n.pt model).
+
+**Summary of what was achieved today:**
+
+| Goal | Status |
+|---|---|
+| Flash Arduino UNO via Pi | ✅ Done |
+| Motor vibration from ZONE commands | ✅ Working |
+| Full pipeline: camera → YOLO → motor | ✅ Confirmed |
+| VL53L0X wired to Arduino I2C | ✅ Wired correctly |
+| VL53L0X reading distance | ❌ Sensor defective |
+| GitHub repo with collaborators | ✅ Done |
+
+**What to do next (tomorrow / next session):**
+
+1. **Order a new VL53L0X sensor** — the current one is defective
+2. **Second vibration motor** — currently only one motor is wired; need one for front zone and one for back/side
+3. **Wire second motor** to a second digital pin (e.g. Pin 10) and extend `vibrate()` function
+4. **Physical collar assembly** — mount Pi, Arduino, motors, battery into the collar form
+5. **Run full demo** with collar worn: person walks, camera detects, motor vibrates in correct zone
+6. **Dashboard camera streaming** — still shows "NO SIGNAL" (deprioritized, not blocking demo)
+
+---
+
 ## Decisions Already Made (do not revisit)
 
 | Decision | Choice | Reason |
