@@ -579,6 +579,32 @@ Nachdem der erste Sensor defekt war, brachte Anna einen neuen. Gleiche Verdrahtu
 
 ---
 
+## Step 20 — Navi Voice Assistant: Full Pipeline Working (09.04.2026 Nacht)
+
+**Bluetooth-Kopfhörer verbunden:**
+SoundPeats S5 über Pi Desktop GUI (Taskbar → Bluetooth → Pair) verbunden. Direkt danach `speaker-test` → Ton über BT-Kopfhörer bestätigt. Kein manuelles `bluetoothctl` nötig — GUI-Pairing war sofort stabiler.
+
+**ElevenLabs TTS working:**
+`mpg123` installed on Pi (`sudo apt install mpg123`). ElevenLabs API call → MP3 → `/tmp/navi_reply.mp3` → `mpg123 -q` plays over BT headphones. Rachel voice (VOICE_ID: 21m00Tcm4TlvDq8ikWAM), eleven_multilingual_v2 model.
+
+**Gemini 2.5 Flash API:**
+Initially tried wrong model names (gemini-2.5-flash-001, gemini-2.0-flash). Listed available models via API call to find correct name: `gemini-2.5-flash`. Key from Google AI Studio (not Maps API).
+
+**navi_voice.py — final working config:**
+- Gemini 2.5 Flash for responses (conversation history maintained per session)
+- ElevenLabs TTS for voice synthesis (Rachel voice, English)
+- mpg123 for BT headphone playback
+- System prompt: responds in English, 2-3 sentences max, tuned for visually impaired navigation assistant
+- Interactive REPL: type question → spoken English answer
+
+**Full demo confirmed:**
+User typed `hey where am i` → Navi responded: *"You are currently at the main entrance of the building. What is your destination, or would you like to hear about nearby points of interest?"* — spoken aloud via BT headphones.
+
+**Group decision (Abend):**
+No speaker/microphone on collar — earphone-based audio only. Bluetooth earphone mic for speech input (next step). Focus until April 16: camera + haptics + distance sensor working together.
+
+---
+
 ## Decisions Already Made (do not revisit)
 
 | Decision | Choice | Reason |
