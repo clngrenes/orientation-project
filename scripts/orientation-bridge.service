@@ -1,0 +1,31 @@
+[Unit]
+Description=ORIENTATION Sensor Bridge (cameras + ToF + Arduino)
+Documentation=https://github.com/your-team/orientation
+After=network.target orientation-server.service
+Wants=orientation-server.service
+
+[Service]
+Type=simple
+User={PI_USER}
+WorkingDirectory={PROJECT_DIR}
+ExecStart=/usr/bin/python3 sensor_bridge.py \
+    --server http://localhost:3000 \
+    --camera-front 0 \
+    --camera-back 1 \
+    --serial-port /dev/ttyACM0 \
+    --use-real-tof \
+    --no-display
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=orientation-bridge
+
+# Give cameras and GPIO time to be ready after boot
+ExecStartPre=/bin/sleep 5
+
+# Allow access to camera devices and GPIO
+SupplementaryGroups=video gpio i2c dialout
+
+[Install]
+WantedBy=multi-user.target

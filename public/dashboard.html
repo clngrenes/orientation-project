@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ORIENTATION — Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0a0a;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Mono', monospace;
+      min-height: 100vh;
+    }
+
+    header {
+      text-align: center;
+      padding: 20px;
+      border-bottom: 1px solid #1a1a1a;
+    }
+
+    header h1 { font-size: 20px; letter-spacing: 6px; }
+    header p { color: #555; font-size: 11px; margin-top: 4px; letter-spacing: 2px; }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 180px 1fr;
+      gap: 16px;
+      max-width: 1100px;
+      margin: 16px auto;
+      padding: 0 16px;
+    }
+
+    /* Camera panels */
+    .cam-panel {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .cam-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-bottom: 1px solid #1a1a1a;
+    }
+
+    .cam-header .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #333;
+      flex-shrink: 0;
+    }
+
+    .cam-header .dot.on { background: #4CAF50; animation: blink 2s infinite; }
+
+    @keyframes blink {
+      50% { opacity: 0.5; }
+    }
+
+    .cam-header .label {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 2px;
+    }
+
+    .cam-panel.front .cam-header .label { color: #4CAF50; }
+    .cam-panel.back .cam-header .label { color: #FF9800; }
+
+    .cam-feed {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4/3;
+      background: #0a0a0a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .cam-feed img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+      transform: rotate(90deg);
+      transform-origin: center center;
+    }
+
+    .cam-feed .placeholder {
+      color: #333;
+      font-size: 12px;
+      text-align: center;
+      line-height: 1.6;
+    }
+
+    .cam-feed img.active {
+      display: block;
+    }
+
+    .cam-feed img.active + .placeholder {
+      display: none;
+    }
+
+    /* Detection list under camera */
+    .det-list {
+      padding: 8px 12px;
+      max-height: 140px;
+      overflow-y: auto;
+    }
+
+    .det-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 5px 8px;
+      margin: 2px 0;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+
+    .det-item.danger { background: rgba(255,68,68,0.12); color: #FF4444; }
+    .det-item.warning { background: rgba(255,152,0,0.12); color: #FF9800; }
+    .det-item.notice { background: rgba(255,235,59,0.1); color: #FFEB3B; }
+    .det-item.safe { background: rgba(255,255,255,0.03); color: #666; }
+
+    .det-item .name { font-weight: 600; }
+    .det-item .info { font-size: 10px; opacity: 0.7; }
+
+    .no-det { color: #2a2a2a; font-size: 11px; padding: 12px; text-align: center; }
+
+    /* Body map center */
+    .body-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+
+    .body-map {
+      position: relative;
+      width: 140px;
+      height: 280px;
+    }
+
+    .body-map svg {
+      width: 100%; height: 100%;
+    }
+
+    .zone {
+      position: absolute;
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid #222;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      color: #444;
+      transition: all 0.3s;
+    }
+
+    .zone.z-front { left: 48px; top: 40px; }
+    .zone.z-back { left: 48px; top: 180px; }
+    .zone.z-left { left: 2px; top: 110px; }
+    .zone.z-right { left: 94px; top: 110px; }
+
+    .zone.danger {
+      background: rgba(255,68,68,0.3);
+      border-color: #FF4444;
+      color: #FF4444;
+      box-shadow: 0 0 20px rgba(255,68,68,0.3);
+      animation: zpulse 0.5s ease-in-out infinite alternate;
+    }
+
+    .zone.warning {
+      background: rgba(255,152,0,0.2);
+      border-color: #FF9800;
+      color: #FF9800;
+      box-shadow: 0 0 12px rgba(255,152,0,0.2);
+    }
+
+    .zone.notice {
+      background: rgba(255,235,59,0.15);
+      border-color: #FFEB3B;
+      color: #FFEB3B;
+    }
+
+    @keyframes zpulse {
+      to { transform: scale(1.12); }
+    }
+
+    /* Stats */
+    .stats-row {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      padding: 16px;
+      border-top: 1px solid #1a1a1a;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .stat { text-align: center; }
+    .stat .val { font-size: 26px; font-weight: 700; }
+    .stat .lbl { font-size: 10px; color: #555; letter-spacing: 1px; margin-top: 2px; }
+    .stat .val.red { color: #FF4444; }
+    .stat .val.orange { color: #FF9800; }
+    .stat .val.green { color: #4CAF50; }
+
+    /* Stair / floor alert bar — fixed height so layout never jumps */
+    #alert-bar {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 6px 16px;
+      min-height: 46px; /* always reserves space — no layout shift */
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .alert-banner {
+      display: none;
+      padding: 7px 16px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+    .alert-banner.stair {
+      background: rgba(156,39,176,0.2);
+      border: 1px solid rgba(156,39,176,0.5);
+      color: #CE93D8;
+    }
+    .alert-banner.floor {
+      background: rgba(0,150,136,0.18);
+      border: 1px solid rgba(0,150,136,0.4);
+      color: #80CBC4;
+    }
+    .alert-banner.show { display: block; }
+
+    /* Links bar */
+    #links-bar {
+      text-align: center;
+      padding: 10px 16px;
+      border-bottom: 1px solid #1a1a1a;
+      font-size: 12px;
+      color: #444;
+    }
+    #links-bar a { color: #4CAF50; text-decoration: none; margin: 0 12px; letter-spacing: 1px; }
+    #links-bar a:hover { color: #81C784; }
+
+    /* ToF sensor panel */
+    .tof-panel {
+      max-width: 1100px;
+      margin: 12px auto;
+      padding: 0 16px;
+    }
+
+    .tof-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .tof-card {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 10px;
+      padding: 12px 14px;
+      text-align: center;
+    }
+
+    .tof-card .tof-label {
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: #444;
+      margin-bottom: 6px;
+    }
+
+    .tof-card .tof-val {
+      font-size: 22px;
+      font-weight: 700;
+      color: #555;
+      transition: color 0.3s;
+    }
+
+    .tof-card .tof-bar {
+      height: 3px;
+      background: #1a1a1a;
+      border-radius: 2px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+
+    .tof-card .tof-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      width: 0%;
+      transition: width 0.3s, background 0.3s;
+    }
+
+    .tof-card.danger .tof-val { color: #FF4444; }
+    .tof-card.warning .tof-val { color: #FF9800; }
+    .tof-card.notice .tof-val { color: #FFEB3B; }
+    .tof-card.safe .tof-val { color: #4CAF50; }
+
+    /* Bridge status dot in links bar */
+    .bridge-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #333;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+    .bridge-dot.on { background: #2196F3; animation: blink 2s infinite; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+    /* ===== REMOTE CONTROL PANEL ===== */
+    #ctrl-panel {
+      max-width: 1100px;
+      margin: 0 auto 20px auto;
+      padding: 0 16px;
+    }
+
+    /* Mode toggle bar */
+    .mode-bar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 20px;
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 14px 14px 0 0;
+      border-bottom: none;
+    }
+    .mode-bar .mode-label { font-size: 10px; letter-spacing: 3px; color: #444; }
+    .mode-toggle {
+      display: flex;
+      background: #0a0a0a;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .mode-btn {
+      padding: 9px 28px;
+      font-size: 12px; font-weight: 700; letter-spacing: 2px;
+      border: none; background: transparent; cursor: pointer;
+      color: #3a3a3a; transition: all 0.15s;
+    }
+    .mode-btn.active-auto   { background: rgba(76,175,80,0.18); color: #4CAF50; }
+    .mode-btn.active-manual { background: rgba(255,152,0,0.18); color: #FF9800; }
+
+    .mode-desc { font-size: 11px; color: #444; margin-left: auto; }
+    .mode-desc span { color: #FF9800; }
+
+    /* Controls body — fixed min-height so nothing jumps */
+    #ctrl-body {
+      background: #111;
+      border: 1px solid #2a2a2a;
+      border-radius: 0 0 14px 14px;
+      padding: 20px 22px;
+      display: none;
+    }
+    #ctrl-body.visible { display: block; }
+
+    .ctrl-section {
+      margin-bottom: 20px;
+    }
+    .ctrl-section:last-child { margin-bottom: 0; }
+
+    .ctrl-section-label {
+      font-size: 9px; letter-spacing: 3px; color: #3a3a3a;
+      margin-bottom: 10px; text-transform: uppercase;
+    }
+
+    .ctrl-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* Target pills — bigger */
+    .target-pills { display: flex; gap: 8px; }
+    .target-pill {
+      padding: 9px 24px;
+      border-radius: 24px;
+      border: 1px solid #2a2a2a;
+      background: #0d0d0d;
+      font-size: 12px; font-weight: 700; letter-spacing: 1.5px;
+      color: #3a3a3a; cursor: pointer; transition: all 0.15s;
+    }
+    .target-pill:hover { border-color: #444; color: #888; }
+    .target-pill.sel-front  { border-color: #4CAF50; color: #4CAF50; background: rgba(76,175,80,0.1); }
+    .target-pill.sel-back   { border-color: #FF9800; color: #FF9800; background: rgba(255,152,0,0.1); }
+    .target-pill.sel-both   { border-color: #64B5F6; color: #64B5F6; background: rgba(100,181,246,0.1); }
+
+    /* Vibration buttons — bigger */
+    .vib-btn {
+      padding: 11px 28px;
+      border-radius: 10px; border: 1px solid;
+      font-size: 13px; font-weight: 700; letter-spacing: 1px;
+      cursor: pointer; transition: all 0.12s;
+      flex: 1; text-align: center;
+    }
+    .vib-btn:active { transform: scale(0.96); }
+    .vib-notice  { border-color: rgba(255,235,59,0.3); color: #FFEB3B; background: rgba(255,235,59,0.06); }
+    .vib-notice:hover  { background: rgba(255,235,59,0.14); }
+    .vib-warning { border-color: rgba(255,152,0,0.4);  color: #FF9800; background: rgba(255,152,0,0.08); }
+    .vib-warning:hover { background: rgba(255,152,0,0.18); }
+    .vib-danger  { border-color: rgba(255,68,68,0.4);  color: #FF4444; background: rgba(255,68,68,0.08); }
+    .vib-danger:hover  { background: rgba(255,68,68,0.18); }
+
+    /* Speak row */
+    .speak-input {
+      flex: 1; min-width: 200px;
+      padding: 11px 16px;
+      background: #0d0d0d; border: 1px solid #2a2a2a; border-radius: 10px;
+      color: #fff; font-size: 14px; font-family: inherit;
+      outline: none; transition: border-color 0.15s;
+    }
+    .speak-input:focus { border-color: #444; }
+    .speak-input::placeholder { color: #333; }
+
+    .speak-btn {
+      padding: 11px 22px;
+      border-radius: 10px; border: 1px solid rgba(76,175,80,0.4);
+      background: rgba(76,175,80,0.08); color: #4CAF50;
+      font-size: 13px; font-weight: 700; letter-spacing: 1px;
+      cursor: pointer; transition: all 0.12s; white-space: nowrap;
+    }
+    .speak-btn:hover { background: rgba(76,175,80,0.18); }
+    .speak-btn:active { transform: scale(0.96); }
+
+    /* Both button */
+    .both-btn {
+      padding: 11px 22px;
+      border-radius: 10px; border: 1px solid rgba(156,39,176,0.4);
+      background: rgba(156,39,176,0.08); color: #CE93D8;
+      font-size: 13px; font-weight: 700; letter-spacing: 1px;
+      cursor: pointer; transition: all 0.12s; white-space: nowrap;
+    }
+    .both-btn:hover { background: rgba(156,39,176,0.18); }
+    .both-btn:active { transform: scale(0.96); }
+
+    /* Preset chips — bigger */
+    .preset-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 8px;
+    }
+    .preset-chip {
+      padding: 10px 14px;
+      border-radius: 10px; border: 1px solid #1e1e1e;
+      background: #0f0f0f; color: #666;
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      transition: all 0.12s; text-align: center;
+    }
+    .preset-chip:hover { border-color: #333; color: #bbb; background: #171717; }
+    .preset-chip:active { transform: scale(0.96); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>ORIENTATION</h1>
+    <p>SPATIAL AWARENESS DASHBOARD</p>
+  </header>
+
+  <div id="links-bar">
+    <span class="bridge-dot" id="dot-bridge"></span> PI BRIDGE
+    &nbsp;·&nbsp;
+    <span id="fps-label" style="color:#555">— FPS</span>
+    &nbsp;·&nbsp;
+    <a href="#" onclick="sendSysCheck(); return false;" style="color:#64B5F6">SYSTEM CHECK</a>
+  </div>
+
+  <div id="alert-bar">
+    <div class="alert-banner stair" id="banner-stair-front">⚠ STAIRS DETECTED — FRONT</div>
+    <div class="alert-banner stair" id="banner-stair-back">⚠ STAIRS DETECTED — BACK</div>
+    <div class="alert-banner floor" id="banner-floor-front">↓ FLOOR OBSTACLE — FRONT</div>
+    <div class="alert-banner floor" id="banner-floor-back">↓ FLOOR OBSTACLE — BACK</div>
+  </div>
+
+  <div class="main-grid">
+    <!-- FRONT CAMERA -->
+    <div class="cam-panel front">
+      <div class="cam-header">
+        <div class="dot" id="dot-front"></div>
+        <span class="label">FRONT CAMERA</span>
+      </div>
+      <div class="cam-feed">
+        <img id="feed-front" />
+        <div class="placeholder" id="ph-front">NO SIGNAL<br>Waiting for sensor bridge...</div>
+      </div>
+      <div class="det-list" id="list-front">
+        <div class="no-det">—</div>
+      </div>
+    </div>
+
+    <!-- BODY MAP -->
+    <div class="body-col">
+      <div class="body-map">
+        <div class="zone z-front" id="z-front">F</div>
+        <div class="zone z-left" id="z-left">L</div>
+        <div class="zone z-right" id="z-right">R</div>
+        <div class="zone z-back" id="z-back">B</div>
+        <svg viewBox="0 0 100 200" fill="none">
+          <circle cx="50" cy="28" r="14" stroke="#222" stroke-width="1.5" fill="none"/>
+          <line x1="50" y1="42" x2="50" y2="110" stroke="#222" stroke-width="1.5"/>
+          <line x1="50" y1="60" x2="22" y2="88" stroke="#222" stroke-width="1.5"/>
+          <line x1="50" y1="60" x2="78" y2="88" stroke="#222" stroke-width="1.5"/>
+          <line x1="50" y1="110" x2="32" y2="170" stroke="#222" stroke-width="1.5"/>
+          <line x1="50" y1="110" x2="68" y2="170" stroke="#222" stroke-width="1.5"/>
+          <polygon points="50,5 46,14 54,14" fill="#4CAF50" opacity="0.4"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- BACK CAMERA -->
+    <div class="cam-panel back">
+      <div class="cam-header">
+        <div class="dot" id="dot-back"></div>
+        <span class="label">BACK CAMERA</span>
+      </div>
+      <div class="cam-feed">
+        <img id="feed-back" />
+        <div class="placeholder" id="ph-back">NO SIGNAL<br>Waiting for back camera...</div>
+      </div>
+      <div class="det-list" id="list-back">
+        <div class="no-det">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ToF SENSORS -->
+  <div class="tof-panel">
+    <div class="tof-grid">
+      <div class="tof-card safe" id="tof-front">
+        <div class="tof-label">FRONT</div>
+        <div class="tof-val" id="tof-val-front">—</div>
+        <div class="tof-bar"><div class="tof-bar-fill" id="tof-bar-front"></div></div>
+      </div>
+      <div class="tof-card safe" id="tof-left">
+        <div class="tof-label">LEFT</div>
+        <div class="tof-val" id="tof-val-left">—</div>
+        <div class="tof-bar"><div class="tof-bar-fill" id="tof-bar-left"></div></div>
+      </div>
+      <div class="tof-card safe" id="tof-right">
+        <div class="tof-label">RIGHT</div>
+        <div class="tof-val" id="tof-val-right">—</div>
+        <div class="tof-bar"><div class="tof-bar-fill" id="tof-bar-right"></div></div>
+      </div>
+      <div class="tof-card safe" id="tof-back">
+        <div class="tof-label">BACK</div>
+        <div class="tof-val" id="tof-val-back">—</div>
+        <div class="tof-bar"><div class="tof-bar-fill" id="tof-bar-back"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- REMOTE CONTROL -->
+  <div id="ctrl-panel">
+    <!-- Mode toggle -->
+    <div class="mode-bar">
+      <span class="mode-label">MODE</span>
+      <div class="mode-toggle">
+        <button class="mode-btn active-auto" id="btn-auto"  onclick="setMode('auto')">AUTO</button>
+        <button class="mode-btn"             id="btn-manual" onclick="setMode('manual')">MANUAL</button>
+      </div>
+      <span class="mode-desc" id="mode-desc">Phones react automatically to detections</span>
+    </div>
+
+    <!-- Controls (only visible in MANUAL mode) -->
+    <div id="ctrl-body">
+
+      <!-- Target zone -->
+      <div class="ctrl-section">
+        <div class="ctrl-section-label">Target Zone</div>
+        <div class="ctrl-row">
+          <div class="target-pills">
+            <button class="target-pill sel-front" id="tp-front" onclick="selectTarget('front')">FRONT</button>
+            <button class="target-pill"           id="tp-left"  onclick="selectTarget('left')">LEFT</button>
+            <button class="target-pill"           id="tp-right" onclick="selectTarget('right')">RIGHT</button>
+            <button class="target-pill"           id="tp-back"  onclick="selectTarget('back')">BACK</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="ctrl-section">
+        <div class="ctrl-section-label">Vibration Override</div>
+        <div class="ctrl-row">
+          <button class="vib-btn vib-notice"  onclick="sendManualZone(1)">· Notice</button>
+          <button class="vib-btn vib-warning" onclick="sendManualZone(2)">·· Warning</button>
+          <button class="vib-btn vib-danger"  onclick="sendManualZone(3)">··· Danger</button>
+          <button class="vib-btn" style="border-color:#333;color:#666" onclick="sendManualZone(0)">OFF</button>
+        </div>
+      </div>
+
+      <div class="ctrl-section">
+        <div class="ctrl-section-label">System Commands</div>
+        <div class="ctrl-row">
+          <button class="preset-chip" onclick="sendSysCmd(0)">Startup Pulse</button>
+          <button class="preset-chip" onclick="sendSysCmd(1)">System Check</button>
+          <button class="preset-chip" onclick="sendSysCmd(2)">Error Signal</button>
+        </div>
+      </div>
+
+      <div class="ctrl-section">
+        <div class="ctrl-section-label">Wizard of Oz — Quick Alerts</div>
+        <div class="preset-grid">
+          <button class="preset-chip" onclick="sendManualAlert('front', 3)">Danger FRONT</button>
+          <button class="preset-chip" onclick="sendManualAlert('left', 2)">Warning LEFT</button>
+          <button class="preset-chip" onclick="sendManualAlert('right', 2)">Warning RIGHT</button>
+          <button class="preset-chip" onclick="sendManualAlert('back', 2)">Warning BACK</button>
+          <button class="preset-chip" onclick="sendAllOff()">ALL OFF</button>
+        </div>
+      </div>
+
+      <!-- OpenClaw Voice Agent -->
+      <div class="ctrl-section">
+        <div class="ctrl-section-label">OpenClaw — Voice Agent</div>
+        <div class="ctrl-row" style="gap:6px;margin-bottom:8px;">
+          <input id="voice-input" type="text" placeholder="Type a query or speak..."
+            style="flex:1;background:#1a1a1a;border:1px solid #333;color:#fff;
+                   padding:7px 10px;border-radius:6px;font-size:12px;font-family:inherit;"
+            onkeydown="if(event.key==='Enter') sendVoiceTrigger()">
+          <button class="preset-chip" onclick="sendVoiceTrigger()">&#9654; Send</button>
+        </div>
+        <div id="voice-log"
+          style="background:#0d0d0d;border:1px solid #1e1e1e;border-radius:8px;
+                 padding:8px;max-height:140px;overflow-y:auto;font-size:11px;
+                 line-height:1.6;color:#888;">
+          <span style="color:#333">No voice activity yet.</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats-row">
+    <div class="stat">
+      <div class="val red" id="s-danger">0</div>
+      <div class="lbl">DANGER</div>
+    </div>
+    <div class="stat">
+      <div class="val orange" id="s-warning">0</div>
+      <div class="lbl">WARNING</div>
+    </div>
+    <div class="stat">
+      <div class="val green" id="s-total">0</div>
+      <div class="lbl">DETECTED</div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    // Populate direct links from current URL
+    const base = location.origin;
+    document.getElementById('link-front').href = base + '/front';
+    document.getElementById('link-front').textContent = base + '/front';
+    document.getElementById('link-back').href = base + '/back';
+    document.getElementById('link-back').textContent = base + '/back';
+
+    // Stair/floor banner timers — alert-bar is always in layout (fixed height), no jumping
+    const bannerTimers = {};
+    function showBanner(id, duration = 4000) {
+      const el = document.getElementById(id);
+      el.classList.add('show');
+      clearTimeout(bannerTimers[id]);
+      bannerTimers[id] = setTimeout(() => el.classList.remove('show'), duration);
+    }
+
+    // Connection status
+    socket.on('status', (s) => {
+      document.getElementById('dot-front').classList.toggle('on', s.frontConnected);
+      document.getElementById('dot-back').classList.toggle('on', s.backConnected);
+      if (!s.frontConnected) {
+        document.getElementById('feed-front').classList.remove('active');
+        document.getElementById('ph-front').style.display = '';
+      }
+      if (!s.backConnected) {
+        document.getElementById('feed-back').classList.remove('active');
+        document.getElementById('ph-back').style.display = '';
+      }
+    });
+
+    // Live camera frames
+    socket.on('camera-frame', (data) => {
+      const img = document.getElementById(`feed-${data.role}`);
+      const ph = document.getElementById(`ph-${data.role}`);
+      if (img && data.image) {
+        img.src = data.image;
+        img.classList.add('active');
+        if (ph) ph.style.display = 'none';
+      }
+    });
+
+    // Detection data
+    socket.on('spatial-update', (data) => {
+      renderList('front', data.front);
+      renderList('back', data.back);
+      updateZones(data);
+      updateStats(data);
+
+      // Stair & floor banners
+      if (data.stairFront) showBanner('banner-stair-front');
+      if (data.stairBack)  showBanner('banner-stair-back');
+      if (data.floorFront?.length) {
+        document.getElementById('banner-floor-front').textContent = `↓ FLOOR OBSTACLE FRONT: ${data.floorFront.join(', ')}`;
+        showBanner('banner-floor-front');
+      }
+      if (data.floorBack?.length) {
+        document.getElementById('banner-floor-back').textContent = `↓ FLOOR OBSTACLE BACK: ${data.floorBack.join(', ')}`;
+        showBanner('banner-floor-back');
+      }
+    });
+
+    function renderList(role, dets) {
+      const el = document.getElementById(`list-${role}`);
+      if (!dets || dets.length === 0) {
+        el.innerHTML = '<div class="no-det">Clear path</div>';
+        return;
+      }
+      el.innerHTML = dets.map(d => `
+        <div class="det-item ${d.level}">
+          <span class="name">${d.isFloorObject ? '↓ ' : ''}${d.label || d.class}</span>
+          <span class="info">${d.level.toUpperCase()} · ${(d.score * 100).toFixed(0)}%</span>
+        </div>
+      `).join('');
+    }
+
+    function updateZones(data) {
+      const fc = data.front?.[0];
+      const bc = data.back?.[0];
+
+      setZone('z-front', fc);
+      setZone('z-back', bc);
+
+      if (fc && fc.centerX < 0.35) setZone('z-left', fc);
+      else clearZone('z-left');
+
+      if (fc && fc.centerX > 0.65) setZone('z-right', fc);
+      else clearZone('z-right');
+    }
+
+    function setZone(id, det) {
+      const el = document.getElementById(id);
+      const pos = id;
+      el.className = `zone ${pos}`;
+      if (det && det.level !== 'safe') el.classList.add(det.level);
+    }
+
+    function clearZone(id) {
+      document.getElementById(id).className = `zone ${id}`;
+    }
+
+    function updateStats(data) {
+      const all = [...(data.front || []), ...(data.back || [])];
+      document.getElementById('s-danger').textContent = all.filter(d => d.level === 'danger').length;
+      document.getElementById('s-warning').textContent = all.filter(d => d.level === 'warning').length;
+      document.getElementById('s-total').textContent = all.length;
+    }
+
+    // ===== ToF SENSOR DISPLAY =====
+    socket.on('tof-update', (data) => {
+      // Show bridge as connected
+      document.getElementById('dot-bridge').classList.add('on');
+      clearTimeout(bridgeTimeout);
+      bridgeTimeout = setTimeout(() => {
+        document.getElementById('dot-bridge').classList.remove('on');
+      }, 5000);
+
+      for (const dir of ['front', 'left', 'right', 'back']) {
+        const mm = data[dir];
+        if (mm == null) continue;
+
+        const card = document.getElementById(`tof-${dir}`);
+        const val = document.getElementById(`tof-val-${dir}`);
+        const bar = document.getElementById(`tof-bar-${dir}`);
+
+        // Display value
+        val.textContent = mm >= 2000 ? '2m+' : (mm / 10).toFixed(0) + 'cm';
+
+        // Threat level coloring
+        let level;
+        if (mm < 500) level = 'danger';
+        else if (mm < 1000) level = 'warning';
+        else if (mm < 1500) level = 'notice';
+        else level = 'safe';
+
+        card.className = 'tof-card ' + level;
+
+        // Bar fill (closer = wider, max at 1500mm)
+        const pct = Math.max(0, Math.min(100, (1 - mm / 1500) * 100));
+        bar.style.width = pct + '%';
+        bar.style.background = level === 'danger' ? '#FF4444'
+          : level === 'warning' ? '#FF9800'
+          : level === 'notice' ? '#FFEB3B' : '#4CAF50';
+      }
+    });
+
+    let bridgeTimeout = null;
+
+    // ===== REMOTE CONTROL =====
+    let currentMode   = 'auto';
+    let currentTarget = 'front';
+    const ZONE_IDS = { front: 0, left: 1, right: 2, back: 3, state: 4 };
+
+    function setMode(mode) {
+      currentMode = mode;
+      const isManual = mode === 'manual';
+
+      document.getElementById('btn-auto').className   = 'mode-btn' + (isManual ? '' : ' active-auto');
+      document.getElementById('btn-manual').className = 'mode-btn' + (isManual ? ' active-manual' : '');
+      document.getElementById('ctrl-body').classList.toggle('visible', isManual);
+      document.getElementById('mode-desc').innerHTML  = isManual
+        ? '<span>Manual override — you control vibration from here</span>'
+        : 'Sensor bridge controls haptics automatically';
+
+      socket.emit('dashboard-cmd', { type: 'set-mode', mode });
+    }
+
+    function selectTarget(t) {
+      currentTarget = t;
+      for (const dir of ['front', 'left', 'right', 'back']) {
+        const el = document.getElementById('tp-' + dir);
+        if (el) el.className = 'target-pill' + (t === dir ? ' sel-' + dir : '');
+      }
+    }
+
+    function sendManualZone(level) {
+      socket.emit('dashboard-cmd', { type: 'manual-zone', zone: currentTarget, zoneId: ZONE_IDS[currentTarget], level });
+    }
+
+    function sendSysCmd(patternId) {
+      socket.emit('dashboard-cmd', { type: 'sys', patternId });
+    }
+
+    function sendSysCheck() {
+      socket.emit('dashboard-cmd', { type: 'sys', patternId: 1 });
+    }
+
+    function sendManualAlert(zone, level) {
+      socket.emit('dashboard-cmd', { type: 'manual-zone', zone, zoneId: ZONE_IDS[zone], level });
+    }
+
+    // ===== OPENCLAW VOICE AGENT =====
+    function sendVoiceTrigger() {
+      const input = document.getElementById('voice-input');
+      const text = input.value.trim();
+      if (!text) return;
+      socket.emit('voice-trigger', { text });
+      _voiceLog('YOU', text, '#4af');
+      input.value = '';
+    }
+
+    function _voiceLog(label, text, color) {
+      const log = document.getElementById('voice-log');
+      const empty = log.querySelector('span[style*="color:#333"]');
+      if (empty) empty.remove();
+      const line = document.createElement('div');
+      line.style.marginBottom = '4px';
+      line.innerHTML = `<span style="color:${color};font-weight:600">[${label}]</span> ${text}`;
+      log.appendChild(line);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    socket.on('voice-query-broadcast', (data) => {
+      _voiceLog('USER', data.text, '#4af');
+    });
+
+    socket.on('voice-response-broadcast', (data) => {
+      _voiceLog('CLAUDE', data.text, '#4f4');
+    });
+
+    function sendAllOff() {
+      for (const dir of ['front', 'left', 'right', 'back']) {
+        socket.emit('dashboard-cmd', { type: 'manual-zone', zone: dir, zoneId: ZONE_IDS[dir], level: 0 });
+      }
+    }
+
+    function flashBtn(btn) {
+      if (!btn) return;
+      btn.style.transform = 'scale(0.92)';
+      setTimeout(() => { btn.style.transform = ''; }, 120);
+    }
+  </script>
+</body>
+</html>

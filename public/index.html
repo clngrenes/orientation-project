@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>ORIENTATION</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0a0a;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    /* ===== LOADING SCREEN ===== */
+    #loading-screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      padding: 40px;
+    }
+
+    #loading-screen h1 { font-size: 22px; letter-spacing: 4px; margin-bottom: 30px; }
+
+    .progress-container {
+      width: 80%;
+      max-width: 280px;
+      height: 4px;
+      background: #222;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: #4CAF50;
+      border-radius: 2px;
+      width: 0%;
+      transition: width 0.3s;
+    }
+
+    #loading-status {
+      font-size: 13px;
+      color: #888;
+      text-align: center;
+    }
+
+    /* ===== SETUP SCREEN ===== */
+    #setup-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      padding: 20px;
+    }
+
+    #setup-screen h1 { font-size: 28px; margin-bottom: 8px; letter-spacing: 4px; }
+    #setup-screen .sub { color: #888; margin-bottom: 40px; font-size: 14px; }
+
+    .role-btn {
+      width: 80%;
+      max-width: 300px;
+      padding: 24px;
+      margin: 10px;
+      border: 2px solid #333;
+      border-radius: 16px;
+      background: #111;
+      color: #fff;
+      font-size: 20px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .role-btn:active { background: #1a3a1a; border-color: #4CAF50; }
+    .role-btn .desc { font-size: 13px; color: #888; margin-top: 6px; }
+
+    /* ===== DETECTION SCREEN ===== */
+    #detection-screen {
+      display: none;
+      height: 100vh;
+      position: relative;
+    }
+
+    #camera-feed {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    #overlay-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    #hud {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      padding: 16px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      z-index: 10;
+    }
+
+    .role-tag {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      padding: 4px 10px;
+      border-radius: 6px;
+    }
+
+    .role-tag.front { background: rgba(76,175,80,0.2); color: #4CAF50; }
+    .role-tag.back { background: rgba(255,152,0,0.2); color: #FF9800; }
+
+    .hud-stats { font-size: 12px; color: #aaa; text-align: right; line-height: 1.6; }
+
+    #closest-alert {
+      position: absolute;
+      bottom: 100px;
+      left: 16px; right: 16px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: 700;
+      z-index: 10;
+      padding: 12px;
+      border-radius: 12px;
+      display: none;
+    }
+
+    #closest-alert.danger {
+      display: block;
+      background: rgba(255,68,68,0.25);
+      color: #FF4444;
+      border: 1px solid rgba(255,68,68,0.4);
+    }
+
+    #closest-alert.warning {
+      display: block;
+      background: rgba(255,152,0,0.2);
+      color: #FF9800;
+      border: 1px solid rgba(255,152,0,0.3);
+    }
+
+    #closest-alert.notice {
+      display: block;
+      background: rgba(255,235,59,0.15);
+      color: #FFEB3B;
+      border: 1px solid rgba(255,235,59,0.2);
+    }
+
+    /* Haptic bar */
+    #haptic-bar-container {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 70px;
+      background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      z-index: 10;
+      padding-bottom: 20px;
+    }
+
+    .hbar {
+      width: 6px;
+      border-radius: 3px;
+      background: #222;
+      transition: all 0.15s;
+    }
+
+    /* Danger border */
+    #danger-border {
+      display: none;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 20;
+      pointer-events: none;
+      border: 4px solid #FF4444;
+      animation: flash 0.4s ease-in-out infinite alternate;
+    }
+
+    @keyframes flash {
+      to { border-color: #FF0000; box-shadow: inset 0 0 40px rgba(255,0,0,0.15); }
+    }
+
+    /* Connection dots */
+    .conn-dots {
+      position: absolute;
+      top: 50px; right: 16px;
+      display: flex; gap: 6px;
+      z-index: 10;
+    }
+
+    .cdot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #333;
+    }
+
+    .cdot.on { background: #4CAF50; }
+  </style>
+</head>
+<body>
+
+  <!-- SETUP -->
+  <div id="setup-screen">
+    <h1>ORIENTATION</h1>
+    <p class="sub">Spatial Awareness Wearable</p>
+    <button class="role-btn" onclick="start('front')">
+      <div>FRONT Camera</div>
+      <div class="desc">Attach to front of body</div>
+    </button>
+    <button class="role-btn" onclick="start('back')">
+      <div>BACK Camera</div>
+      <div class="desc">Attach to back of body</div>
+    </button>
+  </div>
+
+  <!-- LOADING -->
+  <div id="loading-screen">
+    <h1>LOADING</h1>
+    <div class="progress-container">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+    <div id="loading-status">Connecting...</div>
+  </div>
+
+  <!-- DETECTION -->
+  <div id="detection-screen">
+    <video id="camera-feed" autoplay playsinline muted></video>
+    <canvas id="overlay-canvas"></canvas>
+
+    <div id="hud">
+      <span class="role-tag" id="role-tag"></span>
+      <div class="hud-stats">
+        <div id="fps-display">-- FPS</div>
+        <div id="obj-display">Ready</div>
+      </div>
+    </div>
+
+    <div class="conn-dots">
+      <div class="cdot" id="d-front" title="Front"></div>
+      <div class="cdot" id="d-back" title="Back"></div>
+    </div>
+
+    <div id="closest-alert"></div>
+    <div id="haptic-bar-container"></div>
+    <div id="danger-border"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+
+  <script>
+    // ===== STATE =====
+    let socket, model, role, detecting = false;
+    let fps = 0, fpsFrames = 0, fpsTime = performance.now();
+    let hapticTimer = null;
+
+    const PATTERNS = {
+      person: { label: 'PERSON', speed: 400 },
+      bicycle: { label: 'BICYCLE', speed: 200 },
+      car: { label: 'CAR', speed: 150 },
+      motorcycle: { label: 'MOTORCYCLE', speed: 150 },
+      bus: { label: 'BUS', speed: 150 },
+      truck: { label: 'TRUCK', speed: 150 },
+      dog: { label: 'DOG', speed: 450 },
+      cat: { label: 'CAT', speed: 450 },
+    };
+
+    const FALLBACK = { label: 'OBJECT', speed: 600 };
+
+    // ===== AUTO-ROLE FROM URL =====
+    const autoRole = new URLSearchParams(location.search).get('role');
+    if (autoRole === 'front' || autoRole === 'back') {
+      setTimeout(() => start(autoRole), 300);
+    }
+
+    // ===== MAIN START =====
+    async function start(selectedRole) {
+      role = selectedRole;
+
+      // Show loading
+      document.getElementById('setup-screen').style.display = 'none';
+      document.getElementById('loading-screen').style.display = 'flex';
+
+      setProgress(5, 'Connecting to server...');
+
+      // Socket
+      socket = io();
+      socket.on('connect', () => socket.emit('register', role));
+      socket.on('status', s => {
+        const df = document.getElementById('d-front');
+        const db = document.getElementById('d-back');
+        if (df) df.classList.toggle('on', s.frontConnected);
+        if (db) db.classList.toggle('on', s.backConnected);
+      });
+
+      setProgress(15, 'Starting camera...');
+
+      // Camera
+      const video = document.getElementById('camera-feed');
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 480 }, height: { ideal: 360 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        await video.play();
+      } catch (e) {
+        setProgress(0, 'Camera access denied! Please reload and allow camera.');
+        return;
+      }
+
+      setProgress(30, 'Loading AI model (this takes ~10s)...');
+
+      // Load TF.js + COCO-SSD dynamically with progress
+      await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.10.0/dist/tf-core.min.js');
+      setProgress(40, 'Loading AI runtime...');
+
+      await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.10.0/dist/tf-converter.min.js');
+      setProgress(50, 'Loading AI backend...');
+
+      await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.10.0/dist/tf-backend-webgl.min.js');
+      setProgress(60, 'Initializing AI...');
+
+      await tf.setBackend('webgl');
+      await tf.ready();
+      setProgress(70, 'Loading object detection model...');
+
+      await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js');
+      setProgress(80, 'Preparing model...');
+
+      try {
+        model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+      } catch (e) {
+        setProgress(0, 'Model failed to load. Check internet connection.');
+        return;
+      }
+
+      setProgress(100, 'Ready!');
+
+      // Switch to detection screen
+      setTimeout(() => {
+        document.getElementById('loading-screen').style.display = 'none';
+        document.getElementById('detection-screen').style.display = 'block';
+
+        const tag = document.getElementById('role-tag');
+        tag.textContent = role.toUpperCase();
+        tag.className = 'role-tag ' + role;
+
+        // Build haptic bar
+        const bar = document.getElementById('haptic-bar-container');
+        for (let i = 0; i < 24; i++) {
+          const b = document.createElement('div');
+          b.className = 'hbar';
+          b.style.height = `${8 + (i / 24) * 35}px`;
+          bar.appendChild(b);
+        }
+
+        detecting = true;
+        detectLoop();
+      }, 400);
+    }
+
+    // ===== DETECTION LOOP =====
+    async function detectLoop() {
+      if (!detecting || !model) return;
+
+      const video = document.getElementById('camera-feed');
+      const canvas = document.getElementById('overlay-canvas');
+      const ctx = canvas.getContext('2d');
+
+      if (video.videoWidth > 0) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+
+      try {
+        const preds = await model.detect(video, 8, 0.35);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const detections = [];
+
+        for (const p of preds) {
+          const [x, y, w, h] = p.bbox;
+          const area = (w * h) / (canvas.width * canvas.height);
+          const cx = (x + w / 2) / canvas.width;
+
+          let level, color;
+          if (area > 0.40) { level = 'danger'; color = '#FF4444'; }
+          else if (area > 0.20) { level = 'warning'; color = '#FF9800'; }
+          else if (area > 0.08) { level = 'notice'; color = '#FFEB3B'; }
+          else { level = 'safe'; color = '#4CAF5088'; }
+
+          // Draw box
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x, y, w, h);
+
+          // Label
+          const pat = PATTERNS[p.class] || FALLBACK;
+          const lbl = `${pat.label} ${(p.score * 100) | 0}%`;
+          ctx.fillStyle = color;
+          ctx.font = 'bold 13px sans-serif';
+          const tw = ctx.measureText(lbl).width + 8;
+          ctx.fillRect(x, y - 20, tw, 20);
+          ctx.fillStyle = '#000';
+          ctx.fillText(lbl, x + 4, y - 5);
+
+          detections.push({ class: p.class, score: p.score, sizeRatio: area, centerX: cx, level, label: pat.label });
+        }
+
+        detections.sort((a, b) => b.sizeRatio - a.sizeRatio);
+        handleHaptics(detections);
+        updateHUD(detections);
+
+        if (socket?.connected) {
+          socket.emit('detections', { detections, role, timestamp: Date.now() });
+
+          // Send camera frame to dashboard every 5th frame
+          fpsFrames % 5 === 0 && sendFrame(video, canvas, ctx, preds);
+        }
+
+        // FPS
+        fpsFrames++;
+        const now = performance.now();
+        if (now - fpsTime > 1000) {
+          document.getElementById('fps-display').textContent = `${fpsFrames} FPS`;
+          fpsFrames = 0;
+          fpsTime = now;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+
+      requestAnimationFrame(detectLoop);
+    }
+
+    // ===== HAPTICS =====
+    function handleHaptics(dets) {
+      const closest = dets[0];
+      const border = document.getElementById('danger-border');
+      const alert = document.getElementById('closest-alert');
+
+      if (!closest || closest.level === 'safe') {
+        stopVib();
+        border.style.display = 'none';
+        alert.className = '';
+        alert.style.display = 'none';
+        setBar(0);
+        return;
+      }
+
+      let intensity = 0;
+      if (closest.level === 'danger') { intensity = 1; border.style.display = 'block'; }
+      else { border.style.display = 'none'; }
+
+      if (closest.level === 'warning') intensity = 0.6;
+      if (closest.level === 'notice') intensity = 0.3;
+
+      alert.className = closest.level;
+      alert.style.display = 'block';
+      alert.textContent = `${closest.label} — ${closest.level.toUpperCase()}`;
+
+      setBar(intensity);
+
+      const pat = PATTERNS[closest.class] || FALLBACK;
+      const interval = Math.max(60, pat.speed * (1 - intensity * 0.7));
+      const dur = Math.min(180, 80 * (1 + intensity));
+
+      vibrate(dur, interval);
+    }
+
+    function vibrate(dur, interval) {
+      if (hapticTimer) clearInterval(hapticTimer);
+      const go = () => { try { navigator.vibrate(dur); } catch(e){} };
+      go();
+      hapticTimer = setInterval(go, interval);
+    }
+
+    function stopVib() {
+      if (hapticTimer) { clearInterval(hapticTimer); hapticTimer = null; }
+      try { navigator.vibrate(0); } catch(e){}
+    }
+
+    function setBar(intensity) {
+      const bars = document.getElementById('haptic-bar-container').children;
+      const n = Math.round(intensity * bars.length);
+      for (let i = 0; i < bars.length; i++) {
+        const r = i / bars.length;
+        if (i < n) {
+          bars[i].style.background = r > 0.7 ? '#FF4444' : r > 0.4 ? '#FF9800' : '#4CAF50';
+          bars[i].style.boxShadow = `0 0 6px ${r > 0.7 ? 'rgba(255,68,68,0.5)' : r > 0.4 ? 'rgba(255,152,0,0.4)' : 'rgba(76,175,80,0.3)'}`;
+        } else {
+          bars[i].style.background = '#222';
+          bars[i].style.boxShadow = 'none';
+        }
+      }
+    }
+
+    function updateHUD(dets) {
+      const d = dets.filter(x => x.level === 'danger').length;
+      const w = dets.filter(x => x.level === 'warning').length;
+      let t = `${dets.length} obj`;
+      if (d) t += ` · ${d} CLOSE`;
+      if (w) t += ` · ${w} near`;
+      document.getElementById('obj-display').textContent = t;
+    }
+
+    // ===== HELPERS =====
+    function setProgress(pct, msg) {
+      document.getElementById('progress-bar').style.width = pct + '%';
+      document.getElementById('loading-status').textContent = msg;
+    }
+
+    // Send compressed camera frame with overlay to dashboard
+    function sendFrame(video, overlayCanvas, ctx, preds) {
+      try {
+        const send = document.createElement('canvas');
+        send.width = 320;
+        send.height = 240;
+        const sctx = send.getContext('2d');
+        sctx.drawImage(video, 0, 0, 320, 240);
+        sctx.drawImage(overlayCanvas, 0, 0, 320, 240);
+        const jpg = send.toDataURL('image/jpeg', 0.5);
+        socket.emit('frame', { role, image: jpg });
+      } catch(e) {}
+    }
+
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('Failed to load: ' + src));
+        document.head.appendChild(s);
+      });
+    }
+  </script>
+</body>
+</html>

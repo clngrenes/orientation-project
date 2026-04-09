@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ORIENTATION — Use Case Scenarios</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a0a;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    text-align: center;
+    padding: 20px 16px 12px;
+    border-bottom: 1px solid #1a1a1a;
+  }
+  header h1 { font-size: 18px; letter-spacing: 6px; }
+  header p  { color: #444; font-size: 11px; letter-spacing: 2px; margin-top: 4px; }
+
+  /* ── Scenario picker ── */
+  .scenario-bar {
+    display: flex;
+    gap: 8px;
+    padding: 14px 20px;
+    overflow-x: auto;
+    border-bottom: 1px solid #1a1a1a;
+    scrollbar-width: none;
+  }
+  .scenario-bar::-webkit-scrollbar { display: none; }
+
+  .sc-btn {
+    flex-shrink: 0;
+    padding: 8px 18px;
+    border-radius: 20px;
+    border: 1px solid #2a2a2a;
+    background: #111;
+    color: #555;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .sc-btn:hover  { border-color: #444; color: #aaa; }
+  .sc-btn.active { border-color: #4CAF50; color: #4CAF50;
+                   background: rgba(76,175,80,0.1); }
+
+  /* ── Main layout ── */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 220px;
+    gap: 0;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* ── Top-down scene ── */
+  .scene-wrap {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .scene-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: #4CAF50;
+  }
+  .scene-desc {
+    font-size: 12px;
+    color: #555;
+    line-height: 1.6;
+    max-width: 600px;
+  }
+
+  #scene-svg-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 680px;
+  }
+  #scene-svg { width: 100%; height: auto; display: block; }
+
+  /* Speaker bubble */
+  #speaker-bubble {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(10,10,10,0.92);
+    border: 1px solid #4CAF50;
+    border-radius: 12px;
+    padding: 10px 20px;
+    font-size: 13px;
+    color: #4CAF50;
+    letter-spacing: 1px;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.4s;
+    pointer-events: none;
+  }
+  #speaker-bubble.show { opacity: 1; }
+  #speaker-bubble::before {
+    content: '🔊  ';
+  }
+
+  /* ── Right panel ── */
+  .side-panel {
+    border-left: 1px solid #1a1a1a;
+    padding: 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    overflow-y: auto;
+  }
+
+  .panel-section { }
+  .panel-label {
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: #333;
+    margin-bottom: 10px;
+  }
+
+  /* Body map */
+  .body-map-wrap {
+    display: flex;
+    justify-content: center;
+  }
+  .body-map {
+    position: relative;
+    width: 120px;
+    height: 220px;
+  }
+  .body-map svg { width: 100%; height: 100%; }
+
+  .motor-zone {
+    position: absolute;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    border: 1.5px solid #222;
+    background: rgba(255,255,255,0.02);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: 700; color: #333;
+    transition: all 0.3s;
+  }
+  .motor-zone.z-front { left: 42px; top: 28px; }
+  .motor-zone.z-left  { left:  4px; top: 88px; }
+  .motor-zone.z-right { left: 80px; top: 88px; }
+  .motor-zone.z-back  { left: 42px; top: 148px; }
+  .motor-zone.z-state { left: 42px; top: 188px; }
+
+  .motor-zone.notice  { border-color: #FFEB3B; color: #FFEB3B;
+                        background: rgba(255,235,59,0.12); }
+  .motor-zone.warning { border-color: #FF9800; color: #FF9800;
+                        background: rgba(255,152,0,0.15);
+                        box-shadow: 0 0 12px rgba(255,152,0,0.2); }
+  .motor-zone.danger  { border-color: #FF4444; color: #FF4444;
+                        background: rgba(255,68,68,0.2);
+                        box-shadow: 0 0 18px rgba(255,68,68,0.3);
+                        animation: pulse-zone 0.5s ease-in-out infinite alternate; }
+  @keyframes pulse-zone { to { transform: scale(1.15); } }
+
+  /* Sensor status pills */
+  .sensor-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .sensor-pill {
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid #1e1e1e;
+    background: #0d0d0d;
+    font-size: 10px;
+    text-align: center;
+    transition: all 0.3s;
+  }
+  .sensor-pill .s-dir  { color: #333; font-size: 8px; letter-spacing: 2px; }
+  .sensor-pill .s-val  { font-weight: 700; font-size: 13px; color: #333; margin-top: 2px; }
+  .sensor-pill.notice  { border-color: rgba(255,235,59,0.3); }
+  .sensor-pill.notice  .s-val  { color: #FFEB3B; }
+  .sensor-pill.warning { border-color: rgba(255,152,0,0.4); }
+  .sensor-pill.warning .s-val  { color: #FF9800; }
+  .sensor-pill.danger  { border-color: rgba(255,68,68,0.5); }
+  .sensor-pill.danger  .s-val  { color: #FF4444; }
+  .sensor-pill.safe    .s-val  { color: #4CAF50; }
+
+  /* Camera detections */
+  .det-list { display: flex; flex-direction: column; gap: 4px; }
+  .det-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 8px; border-radius: 6px; font-size: 11px;
+  }
+  .det-item.danger  { background: rgba(255,68,68,0.1);  color: #FF4444; }
+  .det-item.warning { background: rgba(255,152,0,0.1);  color: #FF9800; }
+  .det-item.notice  { background: rgba(255,235,59,0.08); color: #FFEB3B; }
+  .det-item.safe    { background: rgba(255,255,255,0.03); color: #555; }
+  .det-item .d-name { font-weight: 700; }
+  .det-item .d-pos  { font-size: 9px; opacity: 0.7; }
+
+  /* Step log */
+  .step-log {
+    display: flex; flex-direction: column; gap: 4px;
+    font-size: 10px; color: #444; line-height: 1.5;
+  }
+  .step-log .step { color: #555; }
+  .step-log .step.active { color: #fff; }
+  .step-log .step::before { content: '→ '; color: #333; }
+  .step-log .step.active::before { content: '▶ '; color: #4CAF50; }
+
+  /* Step-by-step progress */
+  .journey-steps {
+    display: flex; flex-direction: column; gap: 0;
+    border-left: 1px solid #1a1a1a;
+    margin-left: 6px;
+  }
+  .j-step {
+    padding: 6px 0 6px 14px;
+    font-size: 11px;
+    color: #333;
+    cursor: pointer;
+    position: relative;
+    transition: color 0.2s;
+  }
+  .j-step::before {
+    content: '';
+    position: absolute;
+    left: -4px; top: 50%;
+    transform: translateY(-50%);
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #1a1a1a;
+    border: 1.5px solid #333;
+    transition: all 0.2s;
+  }
+  .j-step.active { color: #fff; }
+  .j-step.active::before { background: #4CAF50; border-color: #4CAF50; }
+  .j-step.done { color: #3a3a3a; }
+  .j-step.done::before { background: #2a2a2a; border-color: #2a2a2a; }
+
+  .j-step-label { font-size: 9px; letter-spacing: 1px; }
+  .j-step-desc  { font-size: 10px; margin-top: 1px; }
+
+  /* Nav buttons */
+  .nav-row {
+    display: flex; gap: 8px; margin-top: 4px;
+  }
+  .nav-btn {
+    flex: 1; padding: 8px;
+    border-radius: 8px;
+    border: 1px solid #2a2a2a;
+    background: #111;
+    color: #555;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .nav-btn:hover { border-color: #4CAF50; color: #4CAF50; }
+  .nav-btn:disabled { opacity: 0.3; cursor: default; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ORIENTATION</h1>
+  <p>SYSTEM USE CASE SCENARIOS</p>
+</header>
+
+<!-- Scenario picker -->
+<div class="scenario-bar" id="scenario-bar"></div>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- Scene -->
+  <div class="scene-wrap">
+    <div>
+      <div class="scene-title" id="sc-title">—</div>
+      <div class="scene-desc" id="sc-desc">—</div>
+    </div>
+
+    <!-- Journey steps -->
+    <div class="journey-steps" id="journey-steps"></div>
+
+    <div class="nav-row">
+      <button class="nav-btn" id="btn-prev" onclick="prevStep()">◀ Prev</button>
+      <button class="nav-btn" id="btn-next" onclick="nextStep()">Next ▶</button>
+    </div>
+
+    <!-- SVG scene -->
+    <div id="scene-svg-wrap">
+      <svg id="scene-svg" viewBox="0 0 680 400" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="speaker-bubble"></div>
+    </div>
+  </div>
+
+  <!-- Right panel -->
+  <div class="side-panel">
+
+    <div class="panel-section">
+      <div class="panel-label">VIBRATION MOTORS</div>
+      <div class="body-map-wrap">
+        <div class="body-map">
+          <svg viewBox="0 0 100 200" fill="none">
+            <circle cx="50" cy="22" r="12" stroke="#1a1a1a" stroke-width="1.5"/>
+            <line x1="50" y1="34" x2="50" y2="100" stroke="#1a1a1a" stroke-width="1.5"/>
+            <line x1="50" y1="55" x2="22" y2="80" stroke="#1a1a1a" stroke-width="1.5"/>
+            <line x1="50" y1="55" x2="78" y2="80" stroke="#1a1a1a" stroke-width="1.5"/>
+            <line x1="50" y1="100" x2="34" y2="155" stroke="#1a1a1a" stroke-width="1.5"/>
+            <line x1="50" y1="100" x2="66" y2="155" stroke="#1a1a1a" stroke-width="1.5"/>
+            <polygon points="50,4 46,12 54,12" fill="#4CAF50" opacity="0.5"/>
+          </svg>
+          <div class="motor-zone z-front" id="mz-front">F</div>
+          <div class="motor-zone z-left"  id="mz-left">L</div>
+          <div class="motor-zone z-right" id="mz-right">R</div>
+          <div class="motor-zone z-back"  id="mz-back">B</div>
+          <div class="motor-zone z-state" id="mz-state" style="width:28px;height:28px;font-size:7px">SYS</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-label">TOF DISTANCE SENSORS</div>
+      <div class="sensor-grid">
+        <div class="sensor-pill safe" id="sp-front"><div class="s-dir">FRONT</div><div class="s-val" id="sv-front">—</div></div>
+        <div class="sensor-pill safe" id="sp-back" ><div class="s-dir">BACK</div><div class="s-val" id="sv-back">—</div></div>
+        <div class="sensor-pill safe" id="sp-left" ><div class="s-dir">LEFT</div><div class="s-val" id="sv-left">—</div></div>
+        <div class="sensor-pill safe" id="sp-right"><div class="s-dir">RIGHT</div><div class="s-val" id="sv-right">—</div></div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-label">CAMERA DETECTIONS</div>
+      <div class="det-list" id="det-list">
+        <div style="color:#333;font-size:11px">No detections</div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-label">SYSTEM LOG</div>
+      <div class="step-log" id="step-log"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// SCENARIO DATA
+// ════════════════════════════════════════════════════════════════
+
+const SCENARIOS = [
+
+  // ── 1. STARTUP ────────────────────────────────────────────────
+  {
+    id: 'startup',
+    label: 'STARTUP',
+    title: 'DEVICE STARTUP',
+    desc: 'User puts on the collar and switches it on. System self-checks and confirms it is ready.',
+    steps: [
+      {
+        label: 'Power on',
+        desc: 'User presses the on/off button on the collar.',
+        tof:    { front: null, left: null, right: null, back: null },
+        motors: { front: 'off', left: 'off', right: 'off', back: 'off', state: 'off' },
+        dets:   [],
+        speaker: null,
+        log: ['System initializing...', 'Loading YOLOv8n model', 'Connecting sensors'],
+        scene: 'startup_0',
+      },
+      {
+        label: 'System check',
+        desc: 'Arduino fires startup double-pulse on state motor. All sensors come online.',
+        tof:    { front: 'safe', left: 'safe', right: 'safe', back: 'safe' },
+        motors: { front: 'off', left: 'off', right: 'off', back: 'off', state: 'notice' },
+        dets:   [],
+        speaker: null,
+        log: ['Cameras: ONLINE', 'ToF sensors: 4/4 ONLINE', 'Arduino: CONNECTED', 'Sending SYS 0 (startup pulse)'],
+        scene: 'startup_1',
+      },
+      {
+        label: 'Circular sweep',
+        desc: 'Motors sweep F→L→B→R confirming all zones work. User feels 4 vibrations going around.',
+        tof:    { front: 'safe', left: 'safe', right: 'safe', back: 'safe' },
+        motors: { front: 'notice', left: 'notice', right: 'notice', back: 'notice', state: 'off' },
+        dets:   [],
+        speaker: 'Orientation bereit.',
+        log: ['SYS 1 — circular sweep', 'ZONE 0 → ZONE 1 → ZONE 3 → ZONE 2', 'All zones confirmed'],
+        scene: 'startup_2',
+      },
+      {
+        label: 'Ready — silence',
+        desc: 'No obstacles. All motors off. Silence = safe. User can start walking.',
+        tof:    { front: 'safe', left: 'safe', right: 'safe', back: 'safe' },
+        motors: { front: 'off', left: 'off', right: 'off', back: 'off', state: 'off' },
+        dets:   [],
+        speaker: null,
+        log: ['All zones: SAFE', 'Motors: OFF', 'Silence = clear path'],
+        scene: 'clear',
+      },
+    ],
+  },
+
+  // ── 2. BUS STOP WALK ──────────────────────────────────────────
+  {
+    id: 'busstop',
+    label: 'BUS STOP',
+    title: 'WALKING TO THE BUS STOP',
+    desc: 'User walks along a familiar sidewalk. A person approaches from the left. An obstacle blocks the path ahead.',
+    steps: [
+      {
+        label: 'Clear path',
+        desc: 'Walking normally. No obstacles detected. Silence = safe.',
+        tof:    { front: 'safe', left: 'safe', right: 'safe', back: 'safe' },
+        motors: { front: 'off', left: 'off', right: 'off', back: 'off', state: 'off' },
+        dets:   [{ label: 'PERSON', level: 'safe', pos: 'far ahead' }],
+        speaker: null,
+        log: ['All zones SAFE', 'Person detected: far, safe distance', 'No haptic output'],
+        scene: 'busstop_0',
+      },
+      {
+        label: 'Person from left',
+        desc: 'A pedestrian approaches from the left. Gentle single tap on left shoulder motor every 3 seconds.',
+        tof:    { front: 'safe', left: 'notice', right: 'safe', back: 'safe' },
+        motors: { front: 'off', left: 'notice', right: 'off', back: 'off', state: 'off' },
+        dets:   [{ label: 'PERSON', level: 'notice', pos: 'left of frame' }],
+        speaker: null,
+        log: ['Camera: PERSON left-of-frame', 'ToF LEFT: 130cm → notice', 'ZONE 1 (LEFT) → notice', 'Gentle tap every 3s'],
+        scene: 'busstop_1',
+      },
+      {
+        label: 'Obstacle ahead',
+        desc: 'A parked scooter blocks the sidewalk ahead. Front ToF reads 65cm. Double-tap pattern on front motor.',
+        tof:    { front: 'warning', left: 'safe', right: 'safe', back: 'safe' },
+        motors: { front: 'warning', left: 'off', right: 'off', back: 'off', state: 'off' },
+        dets:   [
+          { label: 'PERSON', level: 'safe', pos: 'left, passing' },
+          { label: 'OBJECT', level: 'warning', pos: 'center-front' }
+        ],
+        speaker: 'Hindernis voraus.',
+        log: ['ToF FRONT: 65cm → warning', 'Camera: OBJECT center', 'ZONE 0 (FRONT) → warning', 'Double-tap every 1.5s'],
+        scene: 'busstop_2',
+      },
+      {
+        label: 'Very close!',
+        desc: 'User did not deviate — now 30cm from obstacle. Triple burst danger pattern. Speaker activates.',
+        tof:    { front: 'danger', left: 'safe', right: 'safe', back: 'safe' },
+        motors: { front: 'danger', left: 'off', right: 'off', back: 'off', state: 'off' },
+        dets:   [{ label: 'OBJECT', level: 'danger', pos: 'directly ahead' }],
+        speaker: 'Gefahr! Stopp.',
+        log: ['ToF FRONT: 30cm → DANGER', 'ZONE 0 → danger', 'Triple burst 120ms-60ms-120ms', 'Speaker: Gefahr! Stopp.'],
+        scene: 'busstop_3',
+      },
+      {
+        label: 'User adjusts',
+        desc: 'User steps left. Clear path found. Vibrations stop. Silence = safe to continue.',
+        tof:    { front: 'safe', left: 'safe', right: 'safe', back: 'safe' },
+        motors: { front: 'off', left: 'off', right: 'off', back: 'off', state: 'off' },
+        dets:   [{ label: 'OBJECT', level: 'safe', pos: 'now to the right' }],
+        speaker: null,
+        log: ['ToF FRONT: 180cm → safe', 'All motors OFF', 'Silence = path clear'],
+        scene: 'busstop_4',
+      },
+    ],
+  },
+
+  // ── 3. BLOCKED SIDEWALK ────────────────────────────────────────
+  {
+    id: 'sidewalk',
+    label: 'BLOCKED PATH',
+    title: 'PASSING A BLOCKED SIDEWALK',
+    desc: 'Sidewalk partially blocked by a scooter. User needs to find the gap and navigate through.',
+    steps: [
+      {
+        label: 'Approaching',
+        desc: 'Scooter detected ahead. Both camera and front ToF confirm. Warning pattern starts.',
+        tof:    { front: 'warning', left: 'safe', right: 'notice', back: 'safe' },
+        motors: { front: 'warning', left: 'off', right: 'notice', back: 'off', state: 'off' },
+        dets:   [{ label: 'OBJECT', level: 'warning', pos: 'slightly right' }],
+        speaker: 'Hindernis rechts.',
+        log: ['ToF FRONT: 85cm → warning', 'ToF RIGHT: 120cm → notice', 'Camera: OBJECT right-of-center', 'Gap is on the LEFT'],
+        scene: 'sidewalk_0',
+      },
+      {
+        label: 'Right blocked',
+        desc: 'Right side confirmed closer. Left side is clear — gap is there. Right warning + front warning.',
+        tof:    { front: 'warning', left: 'safe', right: 'warning', back: 'safe' },
+        motors: { front: 'warning', left: 'off', right: 'warning', back: 'off', state: 'off' },
+        dets:   [{ label: 'OBJECT', level: 'warning', pos: 'right side' }],
+        speaker: null,
+        log: ['Anti-overload: max 2 zones', 'FRONT + RIGHT active', 'LEFT clear → user navigates left'],
+        scene: 'sidewalk_1',
+      },
+      {
+        label: 'Navigating through',
+        desc: 'User moves left, squeezing through gap. Sensors track proximity as user passes through.',
+        tof:    { front: 'notice', left: 'notice', right: 'warning', back: 'safe' },
+        motors: { front: 'off', left: 'notice', right: 'warning', back: 'off', state: 'off' },
+        dets:   [{ label: 'OBJECT', level: 'notice', pos: 'right, passing' }],
+        speaker: null,
+        log: ['ToF RIGHT: 70cm → warning (scooter)', 'ToF LEFT: 110cm → notice (wall)', 'User threading through gap'],
+        scene: 'sidewalk_2',
+      },
+      {
+        label: 'Clear!',
+        desc: 'User passed the obstacle. All sensors read safe. Motors go silent.',
+        tof:    { front: 'safe', left: 'safe', right: 'safe', back: 'safe' },
+        motors: { front: 'off', left: 'off', right: 'off', back: 'off', state: 'off' },
+        dets:   [],
+        speaker: null,
+        log: ['All ToF zones: clear', 'Motors: OFF', 'Silence = obstacle passed'],
+        scene: 'clear',
+      },
+    ],
+  },
+
+  // ── 4. APPROACHING PERSON ─────────────────────────────────────
+  {
+    id: 'person',
+    label: 'FAST APPROACH',
+    title: 'FAST-APPROACHING PERSON',
+    desc: 'A cyclist or fast-walking person approaches head-on. Motion detection escalates threat level.',
+    steps: [
+      {
+        label: 'Person detected',
+        desc: 'Person appears in camera, far away. Single gentle tap — just awareness.',
+        tof:    { front: 'notice', left: 'safe', right: 'safe', back: 'safe' },
+        motors: { front: 'notice', left: 'off', right: 'off', back: 'off', state: 'off' },
+        dets:   [{ label: 'PERSON', level: 'notice', pos: 'center, 150cm' }],
+        speaker: null,
+        log: ['Camera: PERSON center, growing', 'ToF FRONT: 140cm → notice', 'ZONE 0 → gentle tap'],
+        scene: 'person_0',
+      },
+      {
+        label: 'Moving fast',
+        desc: 'Bounding box growing rapidly — motion detected. System escalates to warning before distance threshold.',
+        tof:    { front: 'warning', left: 'safe', right: 'safe', back: 'safe' },
+        motors: { front: 'warning', left: 'off', right: 'off', back: 'off', state: 'off' },
+        dets:   [{ label: 'PERSON', level: 'warning', pos: 'approaching fast' }],
+        speaker: 'Person voraus, nähert sich schnell.',
+        log: ['Velocity: HIGH (+12% area/frame)', 'Level escalated: notice → warning', 'ZONE 0 → double-tap'],
+        scene: 'person_1',
+      },
+      {
+        label: 'Danger zone',
+        desc: 'Person now 40cm away and still moving. Triple burst on front motor. Speaker fires.',
+        tof:    { front: 'danger', left: 'safe', right: 'safe', back: 'safe' },
+        motors: { front: 'danger', left: 'off', right: 'off', back: 'off', state: 'off' },
+        dets:   [{ label: 'PERSON', level: 'danger', pos: 'directly ahead, 40cm' }],
+        speaker: 'Gefahr! Person direkt vor dir.',
+        log: ['ToF FRONT: 40cm → DANGER', 'Camera: PERSON >40% frame', 'Triple burst 120-60-120ms'],
+        scene: 'person_2',
+      },
+    ],
+  },
+
+  // ── 5. BUSY BUS STOP ──────────────────────────────────────────
+  {
+    id: 'crowded',
+    label: 'CROWDED AREA',
+    title: 'BUSY BUS STOP CROWD',
+    desc: 'Multiple people and objects in all directions. Anti-overload keeps only the 2 most critical zones active.',
+    steps: [
+      {
+        label: 'Crowd detected',
+        desc: '5 people around the user. Without anti-overload, all 4 motors would fire. That is overwhelming.',
+        tof:    { front: 'warning', left: 'notice', right: 'notice', back: 'notice' },
+        motors: { front: 'warning', left: 'notice', right: 'notice', back: 'notice', state: 'off' },
+        dets:   [
+          { label: 'PERSON', level: 'warning', pos: 'front' },
+          { label: 'PERSON', level: 'notice',  pos: 'left' },
+          { label: 'PERSON', level: 'notice',  pos: 'right' },
+        ],
+        speaker: null,
+        log: ['4 zones would fire — too much!', 'Anti-overload kicks in...'],
+        scene: 'crowded_0',
+      },
+      {
+        label: 'Anti-overload',
+        desc: 'Anti-overload: max 2 zones. Priority: front first, then highest danger. Left + right silenced.',
+        tof:    { front: 'warning', left: 'notice', right: 'notice', back: 'notice' },
+        motors: { front: 'warning', left: 'off', right: 'off', back: 'off', state: 'off' },
+        dets:   [
+          { label: 'PERSON', level: 'warning', pos: 'front — ACTIVE' },
+          { label: 'PERSON', level: 'safe',    pos: 'left — suppressed' },
+          { label: 'PERSON', level: 'safe',    pos: 'right — suppressed' },
+        ],
+        speaker: null,
+        log: ['Anti-overload: max 2 zones', 'Priority: FRONT (closest)', 'L/R suppressed — no overload'],
+        scene: 'crowded_1',
+      },
+      {
+        label: 'User taps collar',
+        desc: 'User taps the system-check button. Circular sweep confirms system is working despite silence.',
+        tof:    { front: 'notice', left: 'notice', right: 'notice', back: 'notice' },
+        motors: { front: 'notice', left: 'notice', right: 'notice', back: 'notice', state: 'notice' },
+        dets:   [],
+        speaker: 'System aktiv.',
+        log: ['Button pressed → SYS 1', 'Circular sweep F→L→B→R', 'Confirms system running'],
+        scene: 'crowded_2',
+      },
+    ],
+  },
+
+];
+
+// ════════════════════════════════════════════════════════════════
+// SCENE SVG DRAWINGS (top-down)
+// ════════════════════════════════════════════════════════════════
+
+// Color helpers
+const C = {
+  road:    '#111',
+  path:    '#1a1a1a',
+  line:    '#2a2a2a',
+  person:  '#4CAF50',
+  user:    '#ffffff',
+  obstacle:'#FF9800',
+  danger:  '#FF4444',
+  notice:  '#FFEB3B',
+  arc_g:   'rgba(76,175,80,0.15)',
+  arc_o:   'rgba(255,152,0,0.2)',
+  arc_r:   'rgba(255,68,68,0.25)',
+};
+
+function svgEl(tag, attrs, children='') {
+  const a = Object.entries(attrs).map(([k,v]) => `${k}="${v}"`).join(' ');
+  return `<${tag} ${a}>${children}</${tag}>`;
+}
+
+function drawBase() {
+  // Sidewalk + road
+  return `
+    <rect width="680" height="400" fill="${C.road}"/>
+    <!-- sidewalk -->
+    <rect x="80" y="0" width="520" height="400" fill="#141414" rx="0"/>
+    <!-- pavement lines -->
+    <line x1="80" y1="0" x2="80" y2="400" stroke="#1e1e1e" stroke-width="1"/>
+    <line x1="600" y1="0" x2="600" y2="400" stroke="#1e1e1e" stroke-width="1"/>
+  `;
+}
+
+function drawUser(cx, cy, dir='up') {
+  // User with collar
+  const angle = { up: 0, down: 180, left: -90, right: 90 }[dir] || 0;
+  return `
+    <g transform="translate(${cx},${cy}) rotate(${angle})">
+      <!-- sensor arcs -->
+      <circle cx="0" cy="0" r="70" fill="none" stroke="rgba(76,175,80,0.06)" stroke-width="1" stroke-dasharray="4 4"/>
+      <circle cx="0" cy="0" r="120" fill="none" stroke="rgba(76,175,80,0.04)" stroke-width="1" stroke-dasharray="3 6"/>
+      <!-- body -->
+      <ellipse cx="0" cy="8" rx="14" ry="18" fill="#222" stroke="#333" stroke-width="1"/>
+      <!-- head -->
+      <circle cx="0" cy="-14" r="10" fill="#333" stroke="#444" stroke-width="1"/>
+      <!-- collar ring -->
+      <circle cx="0" cy="0" r="20" fill="none" stroke="#4CAF50" stroke-width="2" opacity="0.8"/>
+      <!-- direction indicator -->
+      <polygon points="0,-26 -4,-18 4,-18" fill="#4CAF50" opacity="0.9"/>
+      <!-- white cane -->
+      <line x1="14" y1="10" x2="34" y2="50" stroke="#888" stroke-width="1.5"/>
+      <circle cx="34" cy="52" r="2" fill="#888"/>
+    </g>`;
+}
+
+function drawPersonFigure(cx, cy, color='#555', label='', size=1) {
+  return `
+    <g transform="translate(${cx},${cy}) scale(${size})">
+      <circle cx="0" cy="-12" r="7" fill="${color}" opacity="0.7"/>
+      <ellipse cx="0" cy="4" rx="8" ry="12" fill="${color}" opacity="0.5"/>
+      ${label ? `<text x="0" y="26" text-anchor="middle" fill="${color}" font-size="9" opacity="0.8">${label}</text>` : ''}
+    </g>`;
+}
+
+function drawObstacle(cx, cy, label='SCOOTER', color='#FF9800') {
+  return `
+    <g transform="translate(${cx},${cy})">
+      <rect x="-18" y="-10" width="36" height="20" rx="4" fill="${color}" opacity="0.2" stroke="${color}" stroke-width="1"/>
+      <text x="0" y="4" text-anchor="middle" fill="${color}" font-size="8" font-weight="bold">${label}</text>
+    </g>`;
+}
+
+function drawArc(cx, cy, direction, level, radiusMm) {
+  if (level === 'safe' || level === 'off' || !level) return '';
+  const color = level === 'danger' ? C.arc_r : level === 'warning' ? C.arc_o : C.arc_g;
+  const r = Math.max(30, Math.min(130, radiusMm / 12));
+  const dirAngles = { front: -90, back: 90, left: 180, right: 0 };
+  const a = (dirAngles[direction] || 0) * Math.PI / 180;
+  const x = cx + Math.cos(a) * r;
+  const y = cy + Math.sin(a) * r;
+  return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${level === 'danger' ? C.danger : level === 'warning' ? C.obstacle : C.notice}" stroke-width="1.5" opacity="0.5" stroke-dasharray="3 3"/>
+  <circle cx="${x}" cy="${y}" r="${level === 'danger' ? 6 : 4}" fill="${level === 'danger' ? C.danger : level === 'warning' ? C.obstacle : C.notice}" opacity="0.6"/>`;
+}
+
+// Scene drawings per scenario step
+const SCENES = {
+  startup_0: (s) => drawBase() + drawUser(340, 200),
+  startup_1: (s) => drawBase() + drawUser(340, 200) +
+    `<circle cx="340" cy="200" r="30" fill="none" stroke="#4CAF50" stroke-width="1.5" opacity="0.5" stroke-dasharray="4 4"/>`,
+  startup_2: (s) => drawBase() + drawUser(340, 200) +
+    `<circle cx="340" cy="200" r="50" fill="none" stroke="#4CAF50" stroke-width="2" opacity="0.8" stroke-dasharray="none"/>
+     <circle cx="340" cy="200" r="80" fill="none" stroke="#4CAF50" stroke-width="1" opacity="0.4" stroke-dasharray="4 4"/>`,
+  clear: (s) => drawBase() + drawUser(340, 200),
+
+  busstop_0: (s) => drawBase() + drawUser(340, 260) +
+    drawPersonFigure(340, 100, '#555', 'PERSON', 0.9),
+  busstop_1: (s) => drawBase() + drawUser(340, 260) +
+    drawPersonFigure(220, 180, C.notice, 'PERSON', 1.0) +
+    drawArc(340, 260, 'left', 'notice', 1300),
+  busstop_2: (s) => drawBase() + drawUser(340, 260) +
+    drawPersonFigure(220, 220, '#444', 'PERSON', 0.8) +
+    drawObstacle(340, 140, 'SCOOTER', C.obstacle) +
+    drawArc(340, 260, 'front', 'warning', 650),
+  busstop_3: (s) => drawBase() + drawUser(340, 260) +
+    drawObstacle(340, 200, 'SCOOTER', C.danger) +
+    drawArc(340, 260, 'front', 'danger', 300),
+  busstop_4: (s) => drawBase() + drawUser(340, 260) +
+    drawObstacle(420, 200, 'SCOOTER', '#333'),
+
+  sidewalk_0: (s) => drawBase() + drawUser(280, 280) +
+    drawObstacle(380, 160, 'SCOOTER', C.obstacle) +
+    `<rect x="380" y="0" width="40" height="400" fill="rgba(255,152,0,0.05)"/>` +
+    drawArc(280, 280, 'front', 'warning', 850) +
+    drawArc(280, 280, 'right', 'notice', 1200),
+  sidewalk_1: (s) => drawBase() + drawUser(280, 280) +
+    drawObstacle(400, 180, 'SCOOTER', C.obstacle) +
+    `<rect x="380" y="0" width="60" height="400" fill="rgba(255,152,0,0.07)"/>
+     <text x="220" y="280" fill="rgba(76,175,80,0.5)" font-size="10">← GAP</text>` +
+    drawArc(280, 280, 'front', 'warning', 850) +
+    drawArc(280, 280, 'right', 'warning', 700),
+  sidewalk_2: (s) => drawBase() + drawUser(220, 240) +
+    drawObstacle(380, 220, 'SCOOTER', '#333') +
+    `<rect x="180" y="0" width="30" height="400" fill="rgba(255,235,59,0.04)"/>` +
+    drawArc(220, 240, 'left', 'notice', 1100) +
+    drawArc(220, 240, 'right', 'warning', 700),
+
+  person_0: (s) => drawBase() + drawUser(340, 280) +
+    drawPersonFigure(340, 140, C.notice, 'PERSON') +
+    drawArc(340, 280, 'front', 'notice', 1400),
+  person_1: (s) => drawBase() + drawUser(340, 280) +
+    drawPersonFigure(340, 200, C.obstacle, 'PERSON ▶') +
+    `<polygon points="340,190 330,160 350,160" fill="${C.obstacle}" opacity="0.5"/>` +
+    drawArc(340, 280, 'front', 'warning', 800),
+  person_2: (s) => drawBase() + drawUser(340, 280) +
+    drawPersonFigure(340, 240, C.danger, 'PERSON!', 1.2) +
+    drawArc(340, 280, 'front', 'danger', 400),
+
+  crowded_0: (s) => drawBase() + drawUser(340, 200) +
+    drawPersonFigure(340, 110, C.obstacle, '', 0.9) +
+    drawPersonFigure(230, 200, C.notice, '', 0.8) +
+    drawPersonFigure(440, 200, C.notice, '', 0.8) +
+    drawPersonFigure(320, 290, C.notice, '', 0.8) +
+    drawPersonFigure(260, 140, '#555', '', 0.7),
+  crowded_1: (s) => drawBase() + drawUser(340, 200) +
+    drawPersonFigure(340, 110, C.obstacle, 'ACTIVE', 0.9) +
+    drawPersonFigure(230, 200, '#333', 'suppressed', 0.8) +
+    drawPersonFigure(440, 200, '#333', 'suppressed', 0.8) +
+    drawPersonFigure(320, 290, '#333', '', 0.8) +
+    drawArc(340, 200, 'front', 'warning', 900),
+  crowded_2: (s) => drawBase() + drawUser(340, 200) +
+    drawPersonFigure(340, 110, '#555', '', 0.9) +
+    drawPersonFigure(230, 200, '#555', '', 0.8) +
+    drawPersonFigure(440, 200, '#555', '', 0.8) +
+    `<circle cx="340" cy="200" r="60"  fill="none" stroke="#4CAF50" stroke-width="2" opacity="0.9"/>
+     <circle cx="340" cy="200" r="100" fill="none" stroke="#4CAF50" stroke-width="1" opacity="0.5"/>`,
+};
+
+// ════════════════════════════════════════════════════════════════
+// STATE & RENDERING
+// ════════════════════════════════════════════════════════════════
+
+let currentScenario = 0;
+let currentStep     = 0;
+let speakerTimer    = null;
+
+function buildScenarioBar() {
+  const bar = document.getElementById('scenario-bar');
+  bar.innerHTML = SCENARIOS.map((sc, i) =>
+    `<button class="sc-btn ${i === 0 ? 'active' : ''}"
+             onclick="selectScenario(${i})">${sc.label}</button>`
+  ).join('');
+}
+
+function selectScenario(i) {
+  currentScenario = i;
+  currentStep     = 0;
+  document.querySelectorAll('.sc-btn').forEach((b, j) =>
+    b.classList.toggle('active', j === i));
+  render();
+}
+
+function nextStep() {
+  const sc = SCENARIOS[currentScenario];
+  if (currentStep < sc.steps.length - 1) { currentStep++; render(); }
+}
+function prevStep() {
+  if (currentStep > 0) { currentStep--; render(); }
+}
+
+function render() {
+  const sc   = SCENARIOS[currentScenario];
+  const step = sc.steps[currentStep];
+
+  // Title + desc
+  document.getElementById('sc-title').textContent = sc.title;
+  document.getElementById('sc-desc').textContent  = sc.desc;
+
+  // Journey steps
+  const jEl = document.getElementById('journey-steps');
+  jEl.innerHTML = sc.steps.map((s, i) => {
+    const cls = i < currentStep ? 'done' : i === currentStep ? 'active' : '';
+    return `<div class="j-step ${cls}" onclick="currentStep=${i};render()">
+      <div class="j-step-label">${String(i+1).padStart(2,'0')} — ${s.label.toUpperCase()}</div>
+      <div class="j-step-desc">${s.desc}</div>
+    </div>`;
+  }).join('');
+
+  // Nav buttons
+  document.getElementById('btn-prev').disabled = currentStep === 0;
+  document.getElementById('btn-next').disabled = currentStep === sc.steps.length - 1;
+
+  // SVG scene
+  const sceneKey = step.scene || 'clear';
+  const sceneFn  = SCENES[sceneKey] || SCENES['clear'];
+  document.getElementById('scene-svg').innerHTML = sceneFn(step);
+
+  // Motors
+  const motors = step.motors || {};
+  for (const [zone, level] of Object.entries(motors)) {
+    const el = document.getElementById(`mz-${zone}`);
+    if (el) el.className = `motor-zone z-${zone} ${level === 'off' ? '' : level}`;
+  }
+
+  // ToF sensors
+  const tof    = step.tof || {};
+  const labels = { safe: '—', notice: 'NEAR', warning: 'CLOSE', danger: 'DANGER!' };
+  const vals   = { front: '—', left: '—', right: '—', back: '—' };
+  // Estimate distances from levels for display
+  const distMap = { safe: '200cm+', notice: '130cm', warning: '70cm', danger: '30cm' };
+  for (const [dir, level] of Object.entries(tof)) {
+    const pill = document.getElementById(`sp-${dir}`);
+    const val  = document.getElementById(`sv-${dir}`);
+    if (pill && val) {
+      pill.className = `sensor-pill ${level || 'safe'}`;
+      val.textContent = level ? distMap[level] || '—' : '—';
+    }
+  }
+
+  // Detections
+  const detEl = document.getElementById('det-list');
+  const dets  = step.dets || [];
+  detEl.innerHTML = dets.length ? dets.map(d =>
+    `<div class="det-item ${d.level}">
+      <span class="d-name">${d.label}</span>
+      <span class="d-pos">${d.pos}</span>
+    </div>`
+  ).join('') : '<div style="color:#333;font-size:11px">Clear</div>';
+
+  // Log
+  const logEl = document.getElementById('step-log');
+  logEl.innerHTML = (step.log || []).map((l, i) =>
+    `<div class="step active">${l}</div>`
+  ).join('');
+
+  // Speaker
+  const bubble = document.getElementById('speaker-bubble');
+  if (speakerTimer) clearTimeout(speakerTimer);
+  if (step.speaker) {
+    bubble.textContent = '🔊  ' + step.speaker;
+    bubble.classList.add('show');
+    speakerTimer = setTimeout(() => bubble.classList.remove('show'), 4000);
+  } else {
+    bubble.classList.remove('show');
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────
+buildScenarioBar();
+render();
+
+// Keyboard nav
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight') nextStep();
+  if (e.key === 'ArrowLeft')  prevStep();
+  if (e.key >= '1' && e.key <= '5') selectScenario(parseInt(e.key) - 1);
+});
+</script>
+</body>
+</html>

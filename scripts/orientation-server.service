@@ -1,0 +1,23 @@
+[Unit]
+Description=ORIENTATION Dashboard Server
+Documentation=https://github.com/your-team/orientation
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User={PI_USER}
+WorkingDirectory={PROJECT_DIR}
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=orientation-server
+
+# Resource limits (be kind to the Pi)
+CPUWeight=50
+MemoryMax=200M
+
+[Install]
+WantedBy=multi-user.target

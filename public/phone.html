@@ -1,0 +1,1369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>ORIENTATION</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0a0a;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      height: 100vh; width: 100vw;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    /* ===== LOADING ===== */
+    #loading-screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      padding: 40px;
+    }
+    #loading-screen h1 { font-size: 22px; letter-spacing: 4px; margin-bottom: 30px; }
+    .progress-container {
+      width: 80%; max-width: 280px;
+      height: 4px; background: #222; border-radius: 2px;
+      overflow: hidden; margin-bottom: 16px;
+    }
+    .progress-bar { height: 100%; background: #4CAF50; border-radius: 2px; width: 0%; transition: width 0.3s; }
+    #loading-status { font-size: 13px; color: #888; text-align: center; }
+
+    /* ===== SETUP ===== */
+    #setup-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      padding: 20px;
+    }
+    #setup-screen h1 { font-size: 28px; margin-bottom: 8px; letter-spacing: 4px; }
+    #setup-screen .sub { color: #888; margin-bottom: 40px; font-size: 14px; }
+    .role-btn {
+      width: 80%; max-width: 300px;
+      padding: 24px; margin: 10px;
+      border: 2px solid #333; border-radius: 16px;
+      background: #111; color: #fff;
+      font-size: 20px; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .role-btn:active { background: #1a3a1a; border-color: #4CAF50; }
+    .role-btn .desc { font-size: 13px; color: #888; margin-top: 6px; }
+
+    /* ===== DETECTION ===== */
+    #detection-screen { display: none; height: 100vh; position: relative; }
+
+    #camera-feed {
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+
+    #overlay-canvas {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+
+    #hud {
+      position: absolute; top: 0; left: 0; right: 0;
+      padding: 16px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+      display: flex; justify-content: space-between; align-items: flex-start;
+      z-index: 10;
+    }
+
+    .role-tag {
+      font-size: 13px; font-weight: 700;
+      letter-spacing: 2px; padding: 4px 10px; border-radius: 6px;
+    }
+    .role-tag.front { background: rgba(76,175,80,0.2); color: #4CAF50; }
+    .role-tag.back  { background: rgba(255,152,0,0.2);  color: #FF9800; }
+
+    .hud-stats { font-size: 12px; color: #aaa; text-align: right; line-height: 1.6; }
+
+    /* Stair warning banner */
+    #stair-alert {
+      display: none;
+      position: absolute;
+      top: 70px; left: 16px; right: 16px;
+      background: rgba(156,39,176,0.3);
+      border: 1px solid rgba(156,39,176,0.6);
+      color: #CE93D8;
+      font-size: 15px; font-weight: 700;
+      text-align: center; padding: 10px 16px;
+      border-radius: 12px; z-index: 15;
+      letter-spacing: 1px;
+    }
+    #stair-alert.show { display: block; }
+
+    /* Floor obstacle banner */
+    #floor-alert {
+      display: none;
+      position: absolute;
+      top: 120px; left: 16px; right: 16px;
+      background: rgba(0,150,136,0.25);
+      border: 1px solid rgba(0,150,136,0.5);
+      color: #80CBC4;
+      font-size: 14px; font-weight: 700;
+      text-align: center; padding: 8px 16px;
+      border-radius: 12px; z-index: 15;
+      letter-spacing: 1px;
+    }
+    #floor-alert.show { display: block; }
+
+    /* Wall / surface proximity banner */
+    #wall-alert {
+      display: none;
+      position: absolute;
+      top: 170px; left: 16px; right: 16px;
+      background: rgba(255,152,0,0.2);
+      border: 1px solid rgba(255,152,0,0.45);
+      color: #FFCC80;
+      font-size: 14px; font-weight: 700;
+      text-align: center; padding: 8px 16px;
+      border-radius: 12px; z-index: 15;
+      letter-spacing: 1px;
+    }
+    #wall-alert.show { display: block; }
+
+    #closest-alert {
+      position: absolute; bottom: 100px;
+      left: 16px; right: 16px;
+      text-align: center;
+      font-size: 18px; font-weight: 700;
+      z-index: 10; padding: 12px; border-radius: 12px;
+      display: none;
+    }
+    #closest-alert.danger  { display: block; background: rgba(255,68,68,0.25);  color: #FF4444; border: 1px solid rgba(255,68,68,0.4); }
+    #closest-alert.warning { display: block; background: rgba(255,152,0,0.2);   color: #FF9800; border: 1px solid rgba(255,152,0,0.3); }
+    #closest-alert.notice  { display: block; background: rgba(255,235,59,0.15); color: #FFEB3B; border: 1px solid rgba(255,235,59,0.2); }
+
+    /* Haptic bar */
+    #haptic-bar-container {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: 70px;
+      background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+      display: flex; align-items: center; justify-content: center;
+      gap: 3px; z-index: 10; padding-bottom: 20px;
+    }
+    .hbar { width: 6px; border-radius: 3px; background: #222; transition: all 0.15s; }
+
+    /* Danger border */
+    #danger-border {
+      display: none; position: absolute; top:0; left:0; right:0; bottom:0;
+      z-index: 20; pointer-events: none;
+      border: 4px solid #FF4444;
+      animation: flash 0.4s ease-in-out infinite alternate;
+    }
+    @keyframes flash { to { border-color: #FF0000; box-shadow: inset 0 0 40px rgba(255,0,0,0.15); } }
+
+    /* Stair border */
+    #stair-border {
+      display: none; position: absolute; top:0; left:0; right:0; bottom:0;
+      z-index: 19; pointer-events: none;
+      border: 4px solid #9C27B0;
+      animation: stairflash 0.7s ease-in-out infinite alternate;
+    }
+    @keyframes stairflash { to { border-color: #CE93D8; box-shadow: inset 0 0 30px rgba(156,39,176,0.15); } }
+
+    /* Connection dots */
+    .conn-dots { position: absolute; top: 50px; right: 16px; display: flex; gap: 6px; z-index: 10; }
+    .cdot { width: 8px; height: 8px; border-radius: 50%; background: #333; }
+    .cdot.on { background: #4CAF50; }
+
+    /* Mode flash overlay */
+    #mode-flash {
+      display: none;
+      position: absolute; inset: 0;
+      align-items: center; justify-content: center;
+      z-index: 50; pointer-events: none;
+      font-size: 28px; font-weight: 900; letter-spacing: 4px;
+      animation: mfade 1.4s ease-out forwards;
+    }
+    #mode-flash.auto   { color: #4CAF50; }
+    #mode-flash.manual { color: #FF9800; }
+    @keyframes mfade { 0% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; } }
+
+    /* Mode badge in HUD */
+    #mode-badge {
+      font-size: 10px; font-weight: 700; letter-spacing: 2px;
+      padding: 2px 7px; border-radius: 4px; margin-left: 6px;
+    }
+    #mode-badge.auto   { background: rgba(76,175,80,0.2); color: #4CAF50; }
+    #mode-badge.manual { background: rgba(255,152,0,0.25); color: #FF9800; }
+
+    /* ===== TAP TO START (auto-role) ===== */
+    #tap-screen {
+      display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      height: 100vh; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #tap-screen h1 { font-size: 28px; letter-spacing: 4px; margin-bottom: 12px; }
+    #tap-screen .tap-role {
+      font-size: 22px; font-weight: 700; letter-spacing: 3px;
+      margin-bottom: 60px;
+    }
+    #tap-screen .tap-role.front { color: #4CAF50; }
+    #tap-screen .tap-role.back  { color: #FF9800; }
+    #tap-screen .tap-hint {
+      font-size: 16px; color: #555; letter-spacing: 2px;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+    /* ===== MIC BUTTON (voice assistant) ===== */
+    #mic-btn {
+      position: absolute;
+      bottom: 82px; left: 50%;
+      transform: translateX(-50%);
+      width: 60px; height: 60px;
+      border-radius: 50%;
+      background: rgba(100,181,246,0.12);
+      border: 2px solid rgba(100,181,246,0.35);
+      color: #64B5F6; font-size: 22px;
+      display: none; align-items: center; justify-content: center;
+      cursor: pointer; z-index: 25;
+      -webkit-tap-highlight-color: transparent;
+      transition: background 0.15s, border-color 0.15s;
+      user-select: none; -webkit-user-select: none;
+    }
+    #mic-btn.ready  { display: flex; }
+    #mic-btn.listening {
+      background: rgba(100,181,246,0.3);
+      border-color: #64B5F6;
+      animation: micpulse 0.7s ease-in-out infinite alternate;
+    }
+    @keyframes micpulse {
+      to { transform: translateX(-50%) scale(1.12); box-shadow: 0 0 22px rgba(100,181,246,0.45); }
+    }
+
+    /* Voice transcript display */
+    #voice-display {
+      position: absolute;
+      bottom: 152px; left: 16px; right: 16px;
+      text-align: center;
+      font-size: 13px; color: #64B5F6;
+      z-index: 25; opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+    }
+    #voice-display.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+  <!-- TAP TO START (auto-role via URL) -->
+  <div id="tap-screen">
+    <h1>ORIENTATION</h1>
+    <div class="tap-role" id="tap-role-label"></div>
+    <div class="tap-hint">TAP ANYWHERE TO START</div>
+  </div>
+
+  <!-- SETUP -->
+  <div id="setup-screen">
+    <h1>ORIENTATION</h1>
+    <p class="sub">Spatial Awareness Wearable</p>
+    <button class="role-btn" onclick="start('front')">
+      <div>FRONT Camera</div>
+      <div class="desc">Attach to front of body</div>
+    </button>
+    <button class="role-btn" onclick="start('back')">
+      <div>BACK Camera</div>
+      <div class="desc">Attach to back of body</div>
+    </button>
+  </div>
+
+  <!-- LOADING -->
+  <div id="loading-screen">
+    <h1>LOADING</h1>
+    <div class="progress-container">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+    <div id="loading-status">Connecting...</div>
+  </div>
+
+  <!-- DETECTION -->
+  <div id="detection-screen">
+    <video id="camera-feed" autoplay playsinline muted></video>
+    <canvas id="overlay-canvas"></canvas>
+
+    <div id="hud">
+      <div style="display:flex;align-items:center;">
+        <span class="role-tag" id="role-tag"></span>
+        <span class="mode-badge auto" id="mode-badge">AUTO</span>
+      </div>
+      <div class="hud-stats">
+        <div id="fps-display">-- FPS</div>
+        <div id="obj-display">Ready</div>
+      </div>
+    </div>
+    <div id="mode-flash"></div>
+
+    <div class="conn-dots">
+      <div class="cdot" id="d-front" title="Front"></div>
+      <div class="cdot" id="d-back" title="Back"></div>
+    </div>
+
+    <div id="stair-alert">⚠ STAIRS / STEP DETECTED</div>
+    <div id="floor-alert">↓ OBSTACLE ON FLOOR</div>
+    <div id="wall-alert">⚠ SURFACE CLOSE AHEAD</div>
+    <div id="closest-alert"></div>
+    <div id="haptic-bar-container"></div>
+    <div id="danger-border"></div>
+    <div id="stair-border"></div>
+    <div id="mic-btn" title="Hold to ask">🎤</div>
+    <div id="voice-display"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    // ===== STATE =====
+    let socket, model, role, detecting = false;
+    let fpsFrames = 0, fpsTime = performance.now();
+    let stairCooldown = 0;
+    let manualMode = false;  // true = dashboard controls feedback; auto suppressed
+
+    // Frame-skip: stair/wall analysis every 3rd frame; model inference every other frame
+    let frameCount = 0;
+    let lastStairRaw = false, lastWallRaw = false;
+    let inferenceSkip = false;   // toggles each frame — runs model every 2nd frame
+    let cachedPreds    = [];     // last real model output, reused on skipped frames
+
+    // Stair confirmation: require N consecutive positive frames to avoid false alarms
+    let stairConfirmFrames = 0;
+    const STAIR_CONFIRM = 4;
+
+    // Class stability: object must appear in ≥3 inference frames before triggering alerts
+    // Prevents one-frame ghost detections from firing haptics/speech
+    const classStability = new Map(); // class → consecutive-inference-frame count
+
+    // ===== VOICE ASSISTANT STATE =====
+    let selectedVoice = null;
+    let currentSpatialMap = { front: [], back: [] };  // updated from server
+    let recognition = null;
+    let voiceDisplayTimer = null;
+    // Track current detections for voice queries (updated each detect frame)
+    let liveDetections = [], liveFloorObjects = [], liveStairDetected = false;
+
+    // ===== HAPTIC ENGINE STATE =====
+    // Vibration patterns: [on, off, on, off, ...] ms
+    const HAPTIC = {
+      notice:  { pattern: [25],                       interval: 3000 }, // 1 gentle tap / 3s
+      warning: { pattern: [50, 80, 50],               interval: 1500 }, // double tap / 1.5s
+      danger:  { pattern: [120, 60, 120, 60, 120],    interval: 900  }, // triple burst / 0.9s
+      stairs:  { pattern: [30, 60, 30, 250, 30, 60, 30], interval: 3500 }, // stutter·pause·stutter / 3.5s
+    };
+
+    let hapticScheduler = null;   // setInterval handle
+    let currentHapticLevel = null; // 'notice' | 'warning' | 'danger' | 'stairs' | null
+    let threatFrames = 0;          // consecutive frames with this threat level
+    let safeFrames = 0;            // consecutive frames with no threat
+    const DANGER_CONFIRM_FRAMES = 5;  // require 5 frames before firing danger (less jittery)
+    const SAFE_RELEASE_FRAMES   = 12; // require 12 safe frames before silencing
+
+    const PATTERNS = {
+      person:          { label: 'PERSON',     speed: 400 },
+      bicycle:         { label: 'BICYCLE',    speed: 200 },
+      car:             { label: 'CAR',        speed: 150 },
+      motorcycle:      { label: 'MOTORCYCLE', speed: 150 },
+      bus:             { label: 'BUS',        speed: 150 },
+      truck:           { label: 'TRUCK',      speed: 150 },
+      dog:             { label: 'DOG',        speed: 450 },
+      cat:             { label: 'CAT',        speed: 450 },
+      chair:           { label: 'CHAIR',      speed: 500 },
+      bench:           { label: 'BENCH',      speed: 500 },
+      suitcase:        { label: 'SUITCASE',   speed: 480 },
+      backpack:        { label: 'BACKPACK',   speed: 480 },
+      bottle:          { label: 'BOTTLE',     speed: 600 },
+      'wine glass':    { label: 'GLASS',      speed: 600 },
+      cup:             { label: 'CUP',        speed: 600 },
+      bowl:            { label: 'BOWL',       speed: 580 },
+      vase:            { label: 'VASE',       speed: 550 },
+      laptop:          { label: 'LAPTOP',     speed: 500 },
+      keyboard:        { label: 'KEYBOARD',   speed: 500 },
+      'cell phone':    { label: 'PHONE',      speed: 500 },
+      tv:              { label: 'TV',         speed: 400 },
+      'potted plant':  { label: 'PLANT',      speed: 500 },
+      umbrella:        { label: 'UMBRELLA',   speed: 450 },
+      handbag:         { label: 'BAG',        speed: 480 },
+      'sports ball':   { label: 'BALL',       speed: 500 },
+      'fire hydrant':  { label: 'HYDRANT',    speed: 300 },
+      couch:           { label: 'COUCH',      speed: 450 },
+      bed:             { label: 'BED',        speed: 450 },
+      'dining table':  { label: 'TABLE',      speed: 460 },
+      refrigerator:    { label: 'FRIDGE',     speed: 400 },
+      skateboard:      { label: 'SKATEBOARD', speed: 350 },
+      book:            { label: 'BOOK',       speed: 600 },
+      clock:           { label: 'CLOCK',      speed: 580 },
+      scissors:        { label: 'SCISSORS',   speed: 580 },
+      'teddy bear':    { label: 'TOY',        speed: 580 },
+    };
+    const FALLBACK = { label: 'OBJECT', speed: 600 };
+
+    // ===== GERMAN SPEECH LABELS =====
+    const SPEECH_DE = {
+      person: 'Person', bicycle: 'Fahrrad', car: 'Auto', motorcycle: 'Motorrad',
+      bus: 'Bus', truck: 'LKW', dog: 'Hund', cat: 'Katze', chair: 'Stuhl',
+      bench: 'Bank', suitcase: 'Koffer', backpack: 'Rucksack', bottle: 'Flasche',
+      'wine glass': 'Glas', cup: 'Tasse', bowl: 'Schüssel', vase: 'Vase',
+      laptop: 'Laptop', keyboard: 'Tastatur', 'cell phone': 'Handy', tv: 'Fernseher',
+      'potted plant': 'Pflanze', umbrella: 'Regenschirm', handbag: 'Tasche',
+      'sports ball': 'Ball', 'fire hydrant': 'Hydrant', couch: 'Sofa',
+      bed: 'Bett', 'dining table': 'Tisch', refrigerator: 'Kühlschrank',
+      skateboard: 'Skateboard', book: 'Buch', clock: 'Uhr', scissors: 'Schere',
+      'teddy bear': 'Spielzeug',
+    };
+    function getSpeechLabel(cls) { return SPEECH_DE[cls] || 'object'; }
+
+    function getPosition(cx) {
+      if (cx < 0.33) return 'on your left';
+      if (cx > 0.67) return 'on your right';
+      return 'ahead';
+    }
+
+    // Distance estimate from bounding-box area ratio
+    // Assumes average walking speed ~1.4 m/s and typical object sizes
+    function getDistance(sizeRatio) {
+      if (sizeRatio > 0.40) return null;              // too close — just say "danger"
+      if (sizeRatio > 0.22) return '1 second away';
+      if (sizeRatio > 0.12) return '2 seconds away';
+      if (sizeRatio > 0.08) return '3 seconds away';
+      return null;                                    // too far — skip distance
+    }
+
+    // ===== SPEECH ENGINE =====
+    let lastSpeechTime    = 0;
+    const classSpeechCooldown = new Map();
+    const GLOBAL_SPEECH_GAP = 7000;  // ms minimum between any two announcements
+    const CLASS_SPEECH_GAP  = 16000; // ms before same class is announced again
+
+    function speak(text, urgent = false) {
+      if (!('speechSynthesis' in window)) return;
+      if (urgent) speechSynthesis.cancel();
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.lang = 'en-US'; utt.rate = 1.05; utt.pitch = 1.0; utt.volume = 1.0;
+      if (selectedVoice) utt.voice = selectedVoice;
+      speechSynthesis.speak(utt);
+      lastSpeechTime = Date.now();
+    }
+
+    // Pick the most natural available English voice
+    function initBestVoice() {
+      const voices = speechSynthesis.getVoices();
+      if (!voices.length) return;
+      const priority = [
+        v => v.name === 'Google UK English Female',
+        v => v.name === 'Google US English',
+        v => v.name.startsWith('Google') && v.lang.startsWith('en'),
+        v => v.name === 'Samantha',           // macOS/iOS
+        v => v.name === 'Karen',              // iOS Australian
+        v => v.name.toLowerCase().includes('female') && v.lang.startsWith('en'),
+        v => v.lang === 'en-US',
+        v => v.lang.startsWith('en'),
+      ];
+      for (const test of priority) {
+        const v = voices.find(test);
+        if (v) { selectedVoice = v; return; }
+      }
+      selectedVoice = voices[0];
+    }
+    speechSynthesis.onvoiceschanged = initBestVoice;
+
+    // Called every frame — internally throttled, role-aware
+    function buildAnnouncement(dets, stairDetected) {
+      if (manualMode) return;
+      const now = Date.now();
+      if (now - lastSpeechTime < GLOBAL_SPEECH_GAP) return;
+
+      // ── BACK camera: only speaks for IMMEDIATE danger (object >50% of frame)
+      //    Things far behind you don't matter. Stay quiet unless truly critical.
+      if (role === 'back') {
+        for (const d of dets) {
+          if (d.level !== 'danger') continue;
+          const key = d.class + ':back';
+          if ((classSpeechCooldown.get(key) || 0) + CLASS_SPEECH_GAP * 2 > now) continue;
+          speak(`Behind you! ${getSpeechLabel(d.class)}`, true);
+          classSpeechCooldown.set(key, now);
+          return;
+        }
+        return; // back camera stays completely silent for everything else
+      }
+
+      // ── FRONT camera: full announcement logic ──
+
+      // 1) Danger — highest priority, interrupts anything
+      for (const d of dets) {
+        if (d.level !== 'danger') continue;
+        const key = d.class + ':danger';
+        if ((classSpeechCooldown.get(key) || 0) + CLASS_SPEECH_GAP > now) continue;
+        const pos = getPosition(d.centerX);
+        speak(`Danger! ${getSpeechLabel(d.class)}, ${pos}`, true);
+        classSpeechCooldown.set(key, now);
+        return;
+      }
+
+      // 2) Warning — include position + distance, one at a time
+      for (const d of dets) {
+        if (d.level !== 'warning') continue;
+        const key = d.class + ':warning';
+        if ((classSpeechCooldown.get(key) || 0) + CLASS_SPEECH_GAP > now) continue;
+        const pos  = getPosition(d.centerX);
+        const dist = getDistance(d.sizeRatio);
+        speak(dist ? `${getSpeechLabel(d.class)}, ${pos}, ${dist}` : `${getSpeechLabel(d.class)}, ${pos}`);
+        classSpeechCooldown.set(key, now);
+        return;
+      }
+
+      // 3) Stairs — very long cooldown
+      if (stairDetected) {
+        const key = 'stairs';
+        if ((classSpeechCooldown.get(key) || 0) + CLASS_SPEECH_GAP * 2 > now) return;
+        speak('Watch out, stairs!');
+        classSpeechCooldown.set(key, now);
+        return;
+      }
+
+      // 4) Floor obstacle (warning/danger only, not spamming notice-level clutter)
+      for (const d of dets) {
+        if (!d.isFloorObject || d.level === 'notice' || d.level === 'safe') continue;
+        const key = d.class + ':floor';
+        if ((classSpeechCooldown.get(key) || 0) + CLASS_SPEECH_GAP > now) continue;
+        const pos = getPosition(d.centerX);
+        speak(`${getSpeechLabel(d.class)} on the floor, ${pos}`);
+        classSpeechCooldown.set(key, now);
+        return;
+      }
+    }
+
+    // ===== AUTO-ROLE FROM URL PATH =====
+    const path = location.pathname.toLowerCase();
+    const autoRole = path.includes('front') ? 'front' : path.includes('back') ? 'back'
+                   : new URLSearchParams(location.search).get('role');
+
+    if (autoRole === 'front' || autoRole === 'back') {
+      // Show tap-to-start screen instead of auto-starting.
+      // Android Chrome 92+ requires a user gesture before navigator.vibrate()
+      // and speechSynthesis.speak() — this guarantees that gesture.
+      document.getElementById('setup-screen').style.display = 'none';
+      const tapScreen = document.getElementById('tap-screen');
+      const tapLabel  = document.getElementById('tap-role-label');
+      tapLabel.textContent = autoRole.toUpperCase() + ' CAMERA';
+      tapLabel.className = 'tap-role ' + autoRole;
+      tapScreen.style.display = 'flex';
+      tapScreen.addEventListener('click', () => {
+        tapScreen.style.display = 'none';
+        start(autoRole);
+      }, { once: true });
+    }
+
+    // Pre-init AudioContext on any tap (iOS requires gesture)
+    document.addEventListener('touchstart', () => {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    }, { once: false, passive: true });
+
+    // ===== START =====
+    async function start(selectedRole) {
+      role = selectedRole;
+      // AudioContext + TTS must be initialized on user gesture
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      // Warm up TTS engine (Android Chrome requires a gesture to unlock speech)
+      if ('speechSynthesis' in window) {
+        speechSynthesis.cancel();
+        const warmup = new SpeechSynthesisUtterance('');
+        speechSynthesis.speak(warmup);
+      }
+      document.getElementById('setup-screen').style.display = 'none';
+      document.getElementById('loading-screen').style.display = 'flex';
+      setProgress(5, 'Connecting to server...');
+
+      socket = io();
+      socket.on('connect', () => socket.emit('register', role));
+      socket.on('status', s => {
+        const df = document.getElementById('d-front');
+        const db = document.getElementById('d-back');
+        if (df) df.classList.toggle('on', s.frontConnected);
+        if (db) db.classList.toggle('on', s.backConnected);
+      });
+
+      // ===== REMOTE COMMANDS FROM DASHBOARD =====
+      socket.on('phone-cmd', (cmd) => {
+        if (cmd.type === 'set-mode') {
+          manualMode = cmd.mode === 'manual';
+          if (manualMode) {
+            silenceHaptics();
+            speak('Manual mode.', true);
+          } else {
+            speak('Auto mode.', true);
+          }
+          // Flash mode indicator on screen
+          showModeFlash(cmd.mode);
+        } else if (cmd.type === 'vibrate') {
+          firePattern(cmd.level || 'warning');
+        } else if (cmd.type === 'speak') {
+          speak(cmd.text, true);
+        } else if (cmd.type === 'both') {
+          firePattern(cmd.level || 'warning');
+          speak(cmd.text, true);
+        }
+      });
+
+      // Receive full spatial map so voice assistant can answer about both cameras
+      socket.on('spatial-update', (data) => { currentSpatialMap = data; });
+
+      setProgress(15, 'Starting camera...');
+
+      const video = document.getElementById('camera-feed');
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 320 }, height: { ideal: 240 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        await video.play();
+      } catch (e) {
+        setProgress(0, 'Camera access denied! Reload and allow camera.');
+        return;
+      }
+
+      setProgress(30, 'Loading AI model (~10s)...');
+      await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.10.0/dist/tf-core.min.js');
+      setProgress(40, 'Loading AI runtime...');
+      await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.10.0/dist/tf-converter.min.js');
+      setProgress(50, 'Loading AI backend...');
+      await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.10.0/dist/tf-backend-webgl.min.js');
+      setProgress(60, 'Initializing AI...');
+      await tf.setBackend('webgl');
+      await tf.ready();
+      setProgress(70, 'Loading object detection model...');
+      await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js');
+      setProgress(80, 'Preparing model...');
+
+      try {
+        model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+      } catch (e) {
+        setProgress(0, 'Model failed to load. Check internet.');
+        return;
+      }
+
+      setProgress(100, 'Ready!');
+      setTimeout(() => {
+        document.getElementById('loading-screen').style.display = 'none';
+        document.getElementById('detection-screen').style.display = 'block';
+        const tag = document.getElementById('role-tag');
+        tag.textContent = role.toUpperCase();
+        tag.className = 'role-tag ' + role;
+
+        const bar = document.getElementById('haptic-bar-container');
+        for (let i = 0; i < 24; i++) {
+          const b = document.createElement('div');
+          b.className = 'hbar';
+          b.style.height = `${8 + (i / 24) * 35}px`;
+          bar.appendChild(b);
+        }
+
+        detecting = true;
+        detectLoop();
+        initVoiceAssistant();
+        initBestVoice();
+        setTimeout(() => speak('Orientation ready.'), 600);
+      }, 400);
+    }
+
+    // ===== DETECTION LOOP =====
+    async function detectLoop() {
+      if (!detecting || !model) return;
+
+      const video = document.getElementById('camera-feed');
+      const canvas = document.getElementById('overlay-canvas');
+      const ctx = canvas.getContext('2d');
+
+      if (video.videoWidth > 0) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+
+      try {
+        // Skip model inference every other frame → ~2× FPS boost.
+        // Cached predictions are reused for canvas drawing on skipped frames.
+        inferenceSkip = !inferenceSkip;
+        let preds;
+        if (inferenceSkip) {
+          preds = cachedPreds;
+        } else {
+          preds = await model.detect(video, 7, 0.35);
+          cachedPreds = preds;
+
+          // Update class stability only when we actually ran inference
+          const seenNow = new Set(preds.map(p => p.class));
+          for (const [cls] of classStability) {
+            if (!seenNow.has(cls)) {
+              const n = (classStability.get(cls) || 0) - 2; // faster decay than growth
+              if (n <= 0) classStability.delete(cls);
+              else classStability.set(cls, n);
+            }
+          }
+          for (const cls of seenNow) {
+            classStability.set(cls, Math.min((classStability.get(cls) || 0) + 1, 10));
+          }
+        }
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const detections = [];
+        const floorObjects = [];
+
+        for (const p of preds) {
+          const [x, y, w, h] = p.bbox;
+          const area = (w * h) / (canvas.width * canvas.height);
+          const cx = (x + w / 2) / canvas.width;
+          const boxBottom = (y + h) / canvas.height;
+
+          // Role-aware level thresholds
+          let level, color;
+          if (role === 'back') {
+            if (area > 0.50)      { level = 'danger';  color = '#FF4444'; }
+            else if (area > 0.32) { level = 'warning'; color = '#FF9800'; }
+            else if (area > 0.15) { level = 'notice';  color = '#FFEB3B'; }
+            else                  { level = 'safe';    color = '#4CAF5088'; }
+          } else {
+            if (area > 0.40)      { level = 'danger';  color = '#FF4444'; }
+            else if (area > 0.20) { level = 'warning'; color = '#FF9800'; }
+            else if (area > 0.08) { level = 'notice';  color = '#FFEB3B'; }
+            else                  { level = 'safe';    color = '#4CAF5088'; }
+          }
+
+          const isFloorObject = (boxBottom > 0.45 || (boxBottom > 0.35 && (h / canvas.height) < 0.25))
+                                 && (h / canvas.height) < 0.60 && p.class !== 'person';
+
+          // Class must appear in ≥3 consecutive inference frames before triggering alerts.
+          // We still draw it immediately (visual feedback), but alerts/haptics wait.
+          const stable = (classStability.get(p.class) || 0) >= 3;
+
+          // Draw box (always — visual feedback even before confirmed)
+          let drawColor = isFloorObject ? '#00BCD4' : color;
+          ctx.strokeStyle = stable ? drawColor : drawColor + '66'; // dim unconfirmed
+          ctx.lineWidth = stable ? 2 : 1;
+          ctx.strokeRect(x, y, w, h);
+
+          const pat = PATTERNS[p.class] || FALLBACK;
+          const lbl = (isFloorObject ? '↓ ' : '') + pat.label + ' ' + ((p.score * 100) | 0) + '%' + (stable ? '' : '?');
+          ctx.fillStyle = stable ? drawColor : drawColor + '88';
+          ctx.font = 'bold 13px sans-serif';
+          const tw = ctx.measureText(lbl).width + 8;
+          ctx.fillRect(x, y - 20, tw, 20);
+          ctx.fillStyle = '#000';
+          ctx.fillText(lbl, x + 4, y - 5);
+
+          // Only confirmed (stable) objects drive alerts, haptics, speech
+          if (stable) {
+            detections.push({
+              class: p.class, score: p.score,
+              sizeRatio: area, centerX: cx,
+              level, label: pat.label, isFloorObject
+            });
+            if (isFloorObject) floorObjects.push(p.class);
+          }
+        }
+
+        // ===== STAIR + WALL DETECTION (frame-skipped for FPS) =====
+        frameCount++;
+        // Stair: run every 3rd frame; Wall: run every 3rd frame offset by 1
+        const stairRaw = (frameCount % 3 === 0) ? detectStairs(video, canvas, ctx) : lastStairRaw;
+        lastStairRaw = stairRaw;
+        const wallRaw  = (frameCount % 3 === 1) ? detectWallProximity(video) : lastWallRaw;
+        lastWallRaw = wallRaw;
+
+        // Require STAIR_CONFIRM consecutive positive frames to prevent false alarms
+        if (stairRaw) stairConfirmFrames = Math.min(stairConfirmFrames + 1, STAIR_CONFIRM + 3);
+        else          stairConfirmFrames = Math.max(0, stairConfirmFrames - 1);
+        const stairDetected = stairConfirmFrames >= STAIR_CONFIRM;
+        const wallProximity = wallRaw;
+
+        detections.sort((a, b) => b.sizeRatio - a.sizeRatio);
+        handleHaptics(detections, stairDetected);
+        updateHUD(detections, stairDetected, wallProximity);
+        updateAlerts(detections, floorObjects, stairDetected, wallProximity);
+        buildAnnouncement(detections, stairDetected);
+
+        // Keep live snapshot for voice assistant queries
+        liveDetections = detections;
+        liveFloorObjects = floorObjects;
+        liveStairDetected = stairDetected;
+
+        if (socket?.connected) {
+          socket.emit('detections', {
+            detections, role, stairDetected,
+            floorObjects, timestamp: Date.now()
+          });
+          fpsFrames % 5 === 0 && sendFrame(video, canvas);
+        }
+
+        fpsFrames++;
+        const now = performance.now();
+        if (now - fpsTime > 1000) {
+          document.getElementById('fps-display').textContent = `${fpsFrames} FPS`;
+          fpsFrames = 0; fpsTime = now;
+        }
+      } catch (e) { console.error(e); }
+
+      requestAnimationFrame(detectLoop);
+    }
+
+    // ===== STAIR DETECTION =====
+    // Analyzes bottom 40% of frame for horizontal edge patterns (stairs signature)
+    const stairCanvas = document.createElement('canvas');
+    const stairCtx = stairCanvas.getContext('2d', { willReadFrequently: true });
+    const wallCanvas = document.createElement('canvas');
+    const wallCtx = wallCanvas.getContext('2d', { willReadFrequently: true });
+
+    function detectStairs(video, mainCanvas, ctx) {
+      if (video.videoWidth === 0) return false;
+
+      // Work at 1/4 resolution for speed
+      const W = Math.floor(video.videoWidth / 4);
+      const H = Math.floor(video.videoHeight / 4);
+      stairCanvas.width = W;
+      stairCanvas.height = H;
+
+      stairCtx.drawImage(video, 0, 0, W, H);
+
+      // Only analyze bottom 40% of frame
+      const startY = Math.floor(H * 0.6);
+      const data = stairCtx.getImageData(0, startY, W, H - startY).data;
+      const rows = H - startY;
+
+      // For each row, compute average luminance
+      const rowLuma = new Float32Array(rows);
+      for (let r = 0; r < rows; r++) {
+        let sum = 0;
+        for (let c = 0; c < W; c++) {
+          const idx = (r * W + c) * 4;
+          sum += 0.299 * data[idx] + 0.587 * data[idx+1] + 0.114 * data[idx+2];
+        }
+        rowLuma[r] = sum / W;
+      }
+
+      // Compute row-to-row gradient
+      let edgeCount = 0;
+      let lastEdgeRow = -10;
+      const edgeGaps = [];
+
+      for (let r = 1; r < rows; r++) {
+        const diff = Math.abs(rowLuma[r] - rowLuma[r-1]);
+        if (diff > 18 && r - lastEdgeRow > 2) {
+          edgeCount++;
+          if (lastEdgeRow > 0) edgeGaps.push(r - lastEdgeRow);
+          lastEdgeRow = r;
+        }
+      }
+
+      // Stairs: require 5+ edges with TIGHT regular spacing (reduces false positives)
+      if (edgeCount >= 5 && edgeGaps.length >= 4) {
+        const avgGap = edgeGaps.reduce((a,b) => a+b, 0) / edgeGaps.length;
+        const regular = edgeGaps.every(g => Math.abs(g - avgGap) < avgGap * 0.35);
+        if (regular && avgGap > 2 && avgGap < rows * 0.30) {
+          // Draw stair overlay on main canvas
+          if (stairCooldown <= 0) {
+            const overlayY = mainCanvas.height * 0.6;
+            ctx.fillStyle = 'rgba(156,39,176,0.12)';
+            ctx.fillRect(0, overlayY, mainCanvas.width, mainCanvas.height - overlayY);
+            ctx.strokeStyle = '#9C27B0';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([8, 4]);
+            // Draw detected horizontal lines
+            for (let i = 0; i < edgeGaps.length && i < 5; i++) {
+              const lineY = overlayY + ((edgeGaps[i] / rows) * (mainCanvas.height - overlayY));
+              ctx.beginPath();
+              ctx.moveTo(0, lineY);
+              ctx.lineTo(mainCanvas.width, lineY);
+              ctx.stroke();
+            }
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#CE93D8';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.fillText('⚠ STAIRS', 10, overlayY + 20);
+          }
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // ===== WALL / SURFACE PROXIMITY DETECTION =====
+    // Detects close flat surfaces (walls, doors, large objects) by analyzing
+    // the central zone of the frame for low edge-density (uniform surface = close object).
+    let wallCooldown = 0;
+
+    function detectWallProximity(video) {
+      if (video.videoWidth === 0) return false;
+
+      const W = Math.floor(video.videoWidth / 4);
+      const H = Math.floor(video.videoHeight / 4);
+      wallCanvas.width = W; wallCanvas.height = H;
+      wallCtx.drawImage(video, 0, 0, W, H);
+
+      // Analyze center 50% of frame (horizontal) × center 60% (vertical)
+      // Avoids UI overlay areas and floor/ceiling which are naturally uniform
+      const x0 = Math.floor(W * 0.25), x1 = Math.floor(W * 0.75);
+      const y0 = Math.floor(H * 0.20), y1 = Math.floor(H * 0.80);
+      const rW = x1 - x0, rH = y1 - y0;
+
+      const d = wallCtx.getImageData(x0, y0, rW, rH).data;
+      const luma = new Float32Array(rW * rH);
+      let sumL = 0;
+      for (let i = 0; i < rW * rH; i++) {
+        const p = i * 4;
+        luma[i] = 0.299 * d[p] + 0.587 * d[p+1] + 0.114 * d[p+2];
+        sumL += luma[i];
+      }
+      const avgLuma = sumL / (rW * rH);
+
+      // Compute average gradient magnitude (Sobel-lite)
+      let totalGrad = 0, count = 0;
+      for (let y = 1; y < rH - 1; y++) {
+        for (let x = 1; x < rW - 1; x++) {
+          const gx = Math.abs(luma[y*rW+x+1] - luma[y*rW+x-1]);
+          const gy = Math.abs(luma[(y+1)*rW+x] - luma[(y-1)*rW+x]);
+          totalGrad += (gx + gy) * 0.5;
+          count++;
+        }
+      }
+      const avgGrad = totalGrad / count;
+
+      // Close flat surface: low gradient + visible brightness
+      // avgGrad < 7 means very uniform (close wall / large object)
+      // luma range avoids pitch black (nothing there) and pure white (glare)
+      return avgGrad < 7 && avgLuma > 18 && avgLuma < 235;
+    }
+
+    // ===== ALERTS & HAPTICS =====
+    function updateAlerts(dets, floorObjects, stairDetected, wallProximity) {
+      // --- Stair visual ---
+      const stairEl = document.getElementById('stair-alert');
+      const stairBorder = document.getElementById('stair-border');
+      if (stairDetected) {
+        stairEl.classList.add('show');
+        stairBorder.style.display = 'block';
+        stairCooldown = 15;
+      } else {
+        stairCooldown = Math.max(0, stairCooldown - 1);
+        if (stairCooldown === 0) {
+          stairEl.classList.remove('show');
+          stairBorder.style.display = 'none';
+        }
+      }
+
+      // --- Floor obstacle visual ---
+      const floorEl = document.getElementById('floor-alert');
+      if (floorObjects.length > 0) {
+        floorEl.textContent = `↓ FLOOR: ${[...new Set(floorObjects)].map(c => (PATTERNS[c]||FALLBACK).label).join(', ')}`;
+        floorEl.classList.add('show');
+      } else {
+        floorEl.classList.remove('show');
+      }
+
+      // --- Wall proximity visual ---
+      const wallEl = document.getElementById('wall-alert');
+      if (wallProximity) {
+        wallCooldown = 10;
+      } else {
+        wallCooldown = Math.max(0, wallCooldown - 1);
+      }
+      if (wallCooldown > 0) {
+        wallEl.classList.add('show');
+      } else {
+        wallEl.classList.remove('show');
+      }
+
+      // --- Closest object visual ---
+      const closest = dets[0];
+      const alert = document.getElementById('closest-alert');
+      const border = document.getElementById('danger-border');
+
+      let visualLevel = null;
+      if (closest && closest.level !== 'safe') {
+        visualLevel = closest.level;
+        border.style.display = closest.level === 'danger' ? 'block' : 'none';
+        alert.className = closest.level;
+        alert.style.display = 'block';
+        alert.textContent = `${closest.label} — ${closest.level.toUpperCase()}`;
+        const intensity = closest.level === 'danger' ? 1 : closest.level === 'warning' ? 0.6 : 0.3;
+        setBar(intensity);
+      } else {
+        border.style.display = 'none';
+        alert.className = ''; alert.style.display = 'none';
+        setBar(0);
+      }
+
+      // --- Haptic engine ---
+      updateHapticEngine(visualLevel, stairDetected, wallCooldown > 0);
+    }
+
+    // ===== HAPTIC ENGINE =====
+    // Rules:
+    //  • NOTICE / WARNING → fire immediately, repeat at slow interval
+    //  • DANGER           → require DANGER_CONFIRM_FRAMES before firing (avoids false spikes)
+    //  • SAFE             → wait SAFE_RELEASE_FRAMES before silencing (avoids chatter)
+    //  • Stairs           → own pattern, only if no danger/warning active
+    function updateHapticEngine(visualLevel, stairDetected, wallActive) {
+      if (manualMode) return;  // dashboard controls haptics in manual mode
+
+      // Role-aware haptic priority:
+      // Back camera: only vibrates for confirmed DANGER — ignore warning/notice/stairs/wall.
+      //              Nothing behind you matters unless it's right on top of you.
+      // Front camera: full stack.
+      let desired = null;
+      if (role === 'back') {
+        if (visualLevel === 'danger') desired = 'danger';
+        // everything else: silence
+      } else {
+        if (visualLevel === 'danger')       desired = 'danger';
+        else if (visualLevel === 'warning') desired = 'warning';
+        else if (visualLevel === 'notice')  desired = 'notice';
+        else if (stairDetected)             desired = 'stairs';
+        else if (wallActive)                desired = 'notice';
+      }
+
+      if (desired) {
+        safeFrames = 0;
+
+        if (desired === 'danger') {
+          threatFrames++;
+          // Only escalate to danger after confirmation frames
+          if (threatFrames < DANGER_CONFIRM_FRAMES && currentHapticLevel !== 'danger') {
+            // Show warning pattern while confirming danger
+            if (currentHapticLevel !== 'warning') setHapticLevel('warning');
+            return;
+          }
+        } else {
+          // Reset danger confirmation if threat dropped
+          if (currentHapticLevel === 'danger' && desired !== 'danger') threatFrames = 0;
+        }
+
+        if (desired !== currentHapticLevel) setHapticLevel(desired);
+
+      } else {
+        threatFrames = 0;
+        safeFrames++;
+        if (safeFrames >= SAFE_RELEASE_FRAMES && currentHapticLevel !== null) {
+          silenceHaptics();
+        }
+      }
+    }
+
+    // ===== WEB AUDIO ENGINE (works on iOS Safari) =====
+    let audioCtx = null;
+
+    function getAudioCtx() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      return audioCtx;
+    }
+
+    // Play a single haptic-style tone pulse
+    // freq: Hz, dur: seconds, type: oscillator type, gain: 0-1
+    function audioTick(freq, dur, type = 'sine', gain = 0.6) {
+      try {
+        const ctx = getAudioCtx();
+        const osc = ctx.createOscillator();
+        const env = ctx.createGain();
+        osc.connect(env);
+        env.connect(ctx.destination);
+        osc.type = type;
+        osc.frequency.value = freq;
+        const now = ctx.currentTime;
+        env.gain.setValueAtTime(0, now);
+        env.gain.linearRampToValueAtTime(gain, now + 0.005);
+        env.gain.exponentialRampToValueAtTime(0.001, now + dur);
+        osc.start(now);
+        osc.stop(now + dur + 0.01);
+      } catch(e) {}
+    }
+
+    // Audio patterns per level (sequence of {freq, dur, delay} objects)
+    function playAudioPattern(level) {
+      const ctx = getAudioCtx();
+      const t = ctx.currentTime;
+      if (level === 'notice') {
+        // 1 soft low tick
+        audioTick(120, 0.06, 'sine', 0.3);
+      } else if (level === 'warning') {
+        // double mid tick
+        audioTick(200, 0.07, 'triangle', 0.5);
+        setTimeout(() => audioTick(200, 0.07, 'triangle', 0.5), 150);
+      } else if (level === 'danger') {
+        // triple urgent burst — high freq, sharp
+        audioTick(440, 0.08, 'sawtooth', 0.7);
+        setTimeout(() => audioTick(440, 0.08, 'sawtooth', 0.7), 120);
+        setTimeout(() => audioTick(520, 0.12, 'sawtooth', 0.8), 240);
+      } else if (level === 'stairs') {
+        // stutter-pause-stutter: low freq
+        audioTick(90, 0.05, 'sine', 0.4);
+        setTimeout(() => audioTick(90, 0.05, 'sine', 0.4), 100);
+        setTimeout(() => audioTick(110, 0.08, 'sine', 0.45), 350);
+        setTimeout(() => audioTick(110, 0.08, 'sine', 0.45), 470);
+      }
+    }
+
+    function setHapticLevel(level) {
+      currentHapticLevel = level;
+      if (hapticScheduler) { clearInterval(hapticScheduler); hapticScheduler = null; }
+
+      const h = HAPTIC[level];
+      if (!h) return;
+
+      // Fire immediately
+      firePattern(level);
+      hapticScheduler = setInterval(() => firePattern(level), h.interval);
+
+      const barLevel = level === 'danger' ? 1 : level === 'warning' ? 0.6 : level === 'notice' ? 0.3 : 0.15;
+      setBar(barLevel);
+    }
+
+    function silenceHaptics() {
+      currentHapticLevel = null;
+      safeFrames = 0;
+      if (hapticScheduler) { clearInterval(hapticScheduler); hapticScheduler = null; }
+      try { navigator.vibrate(0); } catch(e){}
+      setBar(0);
+    }
+
+    function firePattern(level_or_pattern) {
+      // Vibration (Android)
+      const pattern = Array.isArray(level_or_pattern) ? level_or_pattern : HAPTIC[level_or_pattern]?.pattern;
+      if (pattern) try { navigator.vibrate(pattern); } catch(e){}
+      // Audio (iOS + all)
+      const level = typeof level_or_pattern === 'string' ? level_or_pattern : currentHapticLevel;
+      if (level) playAudioPattern(level);
+    }
+
+    // handleHaptics is now called from updateAlerts — kept as no-op for compatibility
+    function handleHaptics() {}
+
+    function setBar(intensity) {
+      const bars = document.getElementById('haptic-bar-container').children;
+      const n = Math.round(intensity * bars.length);
+      for (let i = 0; i < bars.length; i++) {
+        const r = i / bars.length;
+        if (i < n) {
+          bars[i].style.background = r > 0.7 ? '#FF4444' : r > 0.4 ? '#FF9800' : '#4CAF50';
+          bars[i].style.boxShadow = `0 0 6px ${r > 0.7 ? 'rgba(255,68,68,0.5)' : r > 0.4 ? 'rgba(255,152,0,0.4)' : 'rgba(76,175,80,0.3)'}`;
+        } else {
+          bars[i].style.background = '#222';
+          bars[i].style.boxShadow = 'none';
+        }
+      }
+    }
+
+    function updateHUD(dets, stairDetected, wallProximity) {
+      const d = dets.filter(x => x.level === 'danger').length;
+      const w = dets.filter(x => x.level === 'warning').length;
+      let t = `${dets.length} obj`;
+      if (d) t += ` · ${d} CLOSE`;
+      if (w) t += ` · ${w} near`;
+      if (stairDetected) t += ` · STAIRS`;
+      if (wallProximity) t += ` · WALL`;
+      document.getElementById('obj-display').textContent = t;
+    }
+
+    // ===== VOICE ASSISTANT =====
+    function initVoiceAssistant() {
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRec) return; // not supported (iOS Safari)
+
+      recognition = new SpeechRec();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+      recognition.maxAlternatives = 1;
+
+      recognition.onresult = (e) => {
+        const transcript = e.results[0][0].transcript.trim();
+        showVoiceDisplay('"' + transcript + '"');
+        handleVoiceQuery(transcript.toLowerCase());
+      };
+      recognition.onerror = (e) => {
+        if (e.error !== 'no-speech') showVoiceDisplay('Not understood');
+        document.getElementById('mic-btn').classList.remove('listening');
+      };
+      recognition.onend = () => {
+        document.getElementById('mic-btn').classList.remove('listening');
+      };
+
+      const btn = document.getElementById('mic-btn');
+      btn.classList.add('ready');
+
+      // Hold to talk
+      btn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        try { recognition.start(); } catch(err) {}
+        btn.classList.add('listening');
+        showVoiceDisplay('Listening…');
+      }, { passive: false });
+
+      btn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        try { recognition.stop(); } catch(err) {}
+      }, { passive: false });
+
+      // Fallback for desktop testing (click toggle)
+      btn.addEventListener('mousedown', () => {
+        try { recognition.start(); } catch(err) {}
+        btn.classList.add('listening');
+        showVoiceDisplay('Listening…');
+      });
+      btn.addEventListener('mouseup', () => {
+        try { recognition.stop(); } catch(err) {}
+      });
+    }
+
+    function showVoiceDisplay(text) {
+      const el = document.getElementById('voice-display');
+      if (!el) return;
+      el.textContent = text;
+      el.classList.add('show');
+      clearTimeout(voiceDisplayTimer);
+      voiceDisplayTimer = setTimeout(() => el.classList.remove('show'), 3500);
+    }
+
+    function handleVoiceQuery(t) {
+      // ── What's in front ──
+      if (/front|ahead|before me|in front|what (do you |can you |)see/.test(t)) {
+        const dets = role === 'front' ? liveDetections : (currentSpatialMap.front || []);
+        speak(describeScene(dets, 'in front of you'), true);
+
+      // ── What's behind ──
+      } else if (/behind|back|what('s| is) (behind|back)/.test(t)) {
+        const dets = role === 'back' ? liveDetections : (currentSpatialMap.back || []);
+        speak(describeScene(dets, 'behind you'), true);
+
+      // ── Safe / clear ──
+      } else if (/safe|clear|okay|ok\b|danger|path/.test(t)) {
+        const front = currentSpatialMap.front || [];
+        const back  = currentSpatialMap.back  || [];
+        const allDangers = [...front, ...back].filter(d => d.level === 'danger' || d.level === 'warning');
+        if (allDangers.length === 0) {
+          speak('Path looks clear. No threats detected.', true);
+        } else {
+          const d = allDangers[0];
+          const side = (d === front[0]) ? 'front' : 'back';
+          speak(`Warning. ${d.label} ${side === 'front' ? 'ahead' : 'behind you'}. ${d.level} level.`, true);
+        }
+
+      // ── How many people ──
+      } else if (/(how many|count) (people|person|humans?)/.test(t)) {
+        const all = [...(currentSpatialMap.front || []), ...(currentSpatialMap.back || [])];
+        const people = all.filter(d => d.class === 'person').length;
+        speak(people === 0 ? 'No people detected.' : `I see ${people} ${people === 1 ? 'person' : 'people'}.`, true);
+
+      // ── Describe everything ──
+      } else if (/describe|around|surroundings|everything|all/.test(t)) {
+        const f = currentSpatialMap.front || [];
+        const b = currentSpatialMap.back  || [];
+        const fDesc = f.length ? describeScene(f, 'in front') : 'nothing in front';
+        const bDesc = b.length ? describeScene(b, 'behind')   : 'nothing behind';
+        speak(`${fDesc}. ${bDesc}.`, true);
+
+      // ── Stairs ──
+      } else if (/stair|step/.test(t)) {
+        if (liveStairDetected || currentSpatialMap.stairFront || currentSpatialMap.stairBack) {
+          speak('Stairs detected nearby. Be careful.', true);
+        } else {
+          speak('No stairs currently detected.', true);
+        }
+
+      // ── Silence / pause ──
+      } else if (/stop|quiet|silence|mute|pause/.test(t)) {
+        silenceHaptics();
+        speak('Alerts paused.', true);
+
+      // ── Resume ──
+      } else if (/resume|start|go|listen/.test(t)) {
+        speak('Resuming alerts.', true);
+
+      // ── Help ──
+      } else if (/help|what can|commands/.test(t)) {
+        speak("Say: what's in front, what's behind, is it safe, how many people, or describe.", true);
+
+      } else {
+        speak("I didn't catch that. Try: what's in front, or is it safe.", true);
+      }
+    }
+
+    function describeScene(dets, direction) {
+      if (!dets || dets.length === 0) return `Nothing detected ${direction}`;
+
+      // Highest-threat object first
+      const sorted = [...dets].sort((a,b) => {
+        const order = { danger:0, warning:1, notice:2, safe:3 };
+        return (order[a.level]||3) - (order[b.level]||3);
+      });
+
+      const top = sorted[0];
+      const pos = getPosition(top.centerX);
+      const dist = getDistance(top.sizeRatio);
+
+      if (top.level === 'danger') {
+        return `Danger! ${top.label} ${direction}, ${pos}${dist ? ', ' + dist : ''}`;
+      }
+      if (top.level === 'warning') {
+        return `${top.label} ${direction}, ${pos}${dist ? ', ' + dist : ''}`;
+      }
+
+      // Multiple safe objects — list up to 3
+      const names = [...new Set(sorted.slice(0, 3).map(d => d.label))].join(', ');
+      return `${names} ${direction}`;
+    }
+
+    // ===== HELPERS =====
+    function showModeFlash(mode) {
+      const el = document.getElementById('mode-flash');
+      const badge = document.getElementById('mode-badge');
+      el.textContent = mode === 'manual' ? 'MANUAL' : 'AUTO';
+      el.className = mode;
+      el.style.display = 'flex';
+      badge.textContent = mode === 'manual' ? 'MANUAL' : 'AUTO';
+      badge.className = 'mode-badge ' + mode;
+      setTimeout(() => { el.style.display = 'none'; }, 1500);
+    }
+
+    function setProgress(pct, msg) {
+      document.getElementById('progress-bar').style.width = pct + '%';
+      document.getElementById('loading-status').textContent = msg;
+    }
+
+    function sendFrame(video, overlayCanvas) {
+      try {
+        const send = document.createElement('canvas');
+        send.width = 320; send.height = 240;
+        const sctx = send.getContext('2d');
+        sctx.drawImage(video, 0, 0, 320, 240);
+        sctx.drawImage(overlayCanvas, 0, 0, 320, 240);
+        socket.emit('frame', { role, image: send.toDataURL('image/jpeg', 0.5) });
+      } catch(e) {}
+    }
+
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src; s.onload = resolve;
+        s.onerror = () => reject(new Error('Failed: ' + src));
+        document.head.appendChild(s);
+      });
+    }
+  </script>
+</body>
+</html>

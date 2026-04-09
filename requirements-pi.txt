@@ -1,0 +1,24 @@
+# ORIENTATION — Python dependencies
+# Install on Raspberry Pi with:
+#   pip install -r requirements-pi.txt
+#
+# On macOS (development):
+#   pip install -r requirements-pi.txt
+#   (RPi.GPIO and adafruit libs will be skipped — that's fine)
+
+# Core inference + vision
+ultralytics
+opencv-python
+
+# Socket.IO client (to connect to server.js)
+python-socketio[client]
+websocket-client
+
+# Arduino serial communication
+pyserial
+
+# ── Raspberry Pi only (skip on Mac) ────────────────────────────────────────
+# VL53L0X ToF distance sensors via I2C
+# Uncomment before running setup-pi.sh on the Pi:
+# adafruit-circuitpython-vl53l0x
+# RPi.GPIO
