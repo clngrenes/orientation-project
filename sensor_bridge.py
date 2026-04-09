@@ -459,7 +459,8 @@ class SensorFusion:
 
 class ArduinoSerial:
     """
-    Sends zone commands and system patterns to Arduino Nano Every over USB serial.
+    Sends zone commands and system patterns to Arduino over USB serial.
+    Also reads TOF:distance lines sent by the Arduino's VL53L0X sensor.
     Falls back to stdout logging when no port is given (development mode).
     Only transmits when level actually changes — avoids spamming serial.
     """
@@ -468,17 +469,41 @@ class ArduinoSerial:
         self._ser        = None
         self._last_zones = {}
         self.connected   = False
+        self._tof_front  = 2000  # default: clear
 
         if port:
             try:
                 import serial
-                self._ser      = serial.Serial(port, baud, timeout=1)
+                self._ser      = serial.Serial(port, baud, timeout=0)  # non-blocking read
                 self.connected = True
                 print(f'[arduino] Connected on {port} at {baud} baud')
                 time.sleep(2)  # Arduino resets on serial open — wait for boot
             except Exception as e:
                 print(f'[arduino] WARNING: Could not open {port}: {e}')
                 print('[arduino] Falling back to stdout logging')
+
+    def read_tof(self):
+        """Drain serial buffer, parse TOF:xxx lines. Returns dict for SensorFusion."""
+        if self._ser:
+            try:
+                while self._ser.in_waiting:
+                    raw = self._ser.readline()
+                    if raw:
+                        line = raw.decode(errors='ignore').strip()
+                        if line.startswith('TOF:'):
+                            try:
+                                self._tof_front = int(line[4:])
+                                print(f'[tof] front={self._tof_front}mm')
+                            except ValueError:
+                                pass
+            except Exception:
+                pass
+        return {
+            'front': self._tof_front,
+            'back':  2000,
+            'left':  2000,
+            'right': 2000,
+        }
 
     def send_zones(self, zones):
         for zone, data in zones.items():
@@ -774,7 +799,8 @@ def main():
                           else stairs_back.detected
 
             # ── ToF ───────────────────────────────────────────────────────
-            tof_data = tof.read()
+            # Read real TOF from Arduino serial if connected, else use mock
+            tof_data = arduino.read_tof() if arduino.connected else tof.read()
 
             # ── Sensor fusion ─────────────────────────────────────────────
             zones = fusion.fuse(stable_f, stable_b, tof_data)

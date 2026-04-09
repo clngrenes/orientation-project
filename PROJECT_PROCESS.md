@@ -560,6 +560,25 @@ All project files pushed (excluding node_modules, .pem keys, yolov8n.pt model).
 
 ---
 
+## Step 19 — VL53L0X Integration + Audio Setup Attempt (09.04.2026 Abend)
+
+**Neuer VL53L0X funktioniert:**
+Nachdem der erste Sensor defekt war, brachte Anna einen neuen. Gleiche Verdrahtung (VIN=5V, GND, SCL=A5, SDA=A4). Sofortige Bestätigung: `DEBUG: VL53L0X OK`, dann kontinuierliche TOF-Messungen (18-26mm bei Hand direkt vor Sensor, 8191mm = out of range).
+
+**TOF-Daten in sensor_bridge.py integriert:**
+`ArduinoSerial` Klasse erweitert mit `read_tof()` Methode — liest `TOF:xxx` Zeilen aus dem Serial-Buffer nicht-blockierend (`timeout=0`). Wenn Arduino verbunden → echte Distanzdaten für front-Zone. Back/left/right bleiben 2000mm (safe) bis weitere Sensoren hinzukommen. Bestätigt: `[tof] front=24mm` etc. erscheint im Output.
+
+**Audio-Setup: kabelgebundene Kopfhörer am 3.5mm Jack:**
+- Pi hat `card 2: bcm2835 Headphones` (3.5mm Jack) — erkannt via `aplay -l`
+- PipeWire läuft und blockiert direkten ALSA-Zugriff
+- `amixer -c 2` Controls existieren aber PipeWire verhindert Schreibzugriff
+- Audio-Setup auf morgen verschoben — einfacher über Desktop GUI (Taskbar-Lautstärke)
+
+**Offene Audio-Lösung für morgen:**
+Über Pi Desktop → Taskbar → Lautstärke-Icon → Output auf Headphones setzen, dann `mpg123` für ElevenLabs MP3-Wiedergabe.
+
+---
+
 ## Decisions Already Made (do not revisit)
 
 | Decision | Choice | Reason |
