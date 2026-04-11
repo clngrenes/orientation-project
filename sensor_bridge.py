@@ -343,21 +343,54 @@ class DetectionPipeline:
 class StairDetector:
     """
     Detects stairs by finding regularly-spaced horizontal luminance edges
-    in the bottom 40% of the frame. Ported from phone.html.
-    Requires CONFIRM_FRAMES consecutive positives to trigger.
+    with a perspective gradient (gaps shrink toward the top of the frame).
+
+    Two-level output:
+      level == 'soft'      → gentle front nudge (10 frames)
+      level == 'confirmed' → full stair alarm   (18 frames)
+      level == 'clear'     → nothing
+
+    False-positive hardening vs the original:
+      - Requires perspective gradient: gaps must shrink toward top (real stairs,
+        not floor tiles/carpet which have equal spacing)
+      - Stricter gap consistency (±22% instead of ±35%)
+      - Edge count bounded: 5–12 edges (more = flat repeating pattern, not stairs)
+      - Higher confirmation threshold: 18 frames (~1.8 s sustained)
+      - Faster decay: count drops 3× per negative frame (fast recovery)
+      - Cooldown: minimum 4 s between full alarms (no flickering)
     """
 
-    CONFIRM = 5
+    CONFIRM_SOFT = 10
+    CONFIRM_HARD = 18
+    DECAY        = 3      # subtract per negative frame
+    COOLDOWN_S   = 4.0
 
     def __init__(self):
-        self._count   = 0
-        self.detected = False
+        self._count      = 0
+        self._last_alarm = 0.0
+        self.detected    = False   # backward-compat (True = confirmed)
+        self.level       = 'clear' # 'clear' | 'soft' | 'confirmed'
 
     def update(self, frame):
         raw = self._raw(frame)
-        self._count = min(self._count + 1, self.CONFIRM + 3) if raw \
-                      else max(0, self._count - 1)
-        self.detected = self._count >= self.CONFIRM
+        if raw:
+            self._count = min(self._count + 1, self.CONFIRM_HARD + 4)
+        else:
+            self._count = max(0, self._count - self.DECAY)
+
+        now = time.time()
+
+        if self._count >= self.CONFIRM_HARD:
+            if (now - self._last_alarm) >= self.COOLDOWN_S:
+                self.level    = 'confirmed'
+                self._last_alarm = now
+            # else: stay at previous level — don't spam during cooldown
+        elif self._count >= self.CONFIRM_SOFT:
+            self.level = 'soft'
+        else:
+            self.level = 'clear'
+
+        self.detected = (self.level == 'confirmed')
         return self.detected
 
     def _raw(self, frame):
@@ -380,7 +413,8 @@ class StairDetector:
                 edge_rows.append(r)
                 last = r
 
-        if len(edge_rows) < 5:
+        # Bound edge count: too few = no stairs, too many = flat repeating pattern
+        if not (5 <= len(edge_rows) <= 12):
             return False
 
         gaps = [edge_rows[i+1] - edge_rows[i] for i in range(len(edge_rows)-1)]
@@ -388,8 +422,22 @@ class StairDetector:
             return False
 
         avg = sum(gaps) / len(gaps)
-        return (2 < avg < rows * 0.30) and \
-               all(abs(g - avg) < avg * 0.35 for g in gaps)
+
+        # Stricter consistency: ±22% (was ±35%)
+        if not (2 < avg < rows * 0.30):
+            return False
+        if not all(abs(g - avg) < avg * 0.22 for g in gaps):
+            return False
+
+        # Perspective gradient check: on real stairs the gaps shrink toward
+        # the top (further away = smaller). Floor tiles stay roughly equal.
+        # At least 55% of consecutive gap pairs must be decreasing.
+        if len(gaps) >= 3:
+            decreasing = sum(1 for i in range(len(gaps) - 1) if gaps[i] > gaps[i+1])
+            if decreasing / (len(gaps) - 1) < 0.55:
+                return False
+
+        return True
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -938,10 +986,18 @@ def main():
             arduino.send_zones(zones)
 
             now = time.time()
-            # Stair warning — distinctive pattern, max once per 3s
-            if (stair_f or stair_b) and (now - last_stair_cmd) > 3.0:
-                arduino.send_stair()
+            # Stair warning — two levels
+            stair_level = max(
+                (stairs_front.level, stairs_back.level),
+                key=lambda l: {'clear': 0, 'soft': 1, 'confirmed': 2}.get(l, 0)
+            )
+            if stair_level == 'confirmed' and (now - last_stair_cmd) > 3.0:
+                arduino.send_stair()   # all 6 motors — full alarm
                 last_stair_cmd = now
+            elif stair_level == 'soft' and (now - last_stair_cmd) > 3.0:
+                # Gentle nudge: just front motors at Notice level
+                arduino._tx('ZONE:0:1')  # F notice
+                arduino._tx('ZONE:1:1')  # FR notice
 
             # Heartbeat — every 5s so user knows system is running
             if (now - last_beat) > 5.0:
