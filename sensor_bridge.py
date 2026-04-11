@@ -63,9 +63,14 @@ MAX_ACTIVE_ZONES = 2
 # Frame skip for dashboard streaming (every Nth frame)
 FRAME_SEND_INTERVAL = 5
 
-# Zone IDs matching Arduino protocol
-ZONE_IDS  = {'front': 0, 'left': 1, 'right': 2, 'back': 3, 'state': 4}
+# Zone IDs matching Arduino protocol (6 motors)
+# F=DFRobot front, FR/FL=coin front-right/left, BL/BR=coin back-left/right, B=DFRobot back
+ZONE_IDS  = {'f': 0, 'fr': 1, 'fl': 2, 'bl': 3, 'br': 4, 'b': 5,
+             'front': 0}   # backward-compat alias for dashboard
 LEVEL_IDS = {'safe': 0, 'notice': 1, 'warning': 2, 'danger': 3}
+
+# Sensor index → direction name (matches XSHUT pin order on Arduino)
+TOF_MAP = {0: 'front', 1: 'left', 2: 'right', 3: 'back'}
 
 # COCO class labels relevant to outdoor navigation
 LABELS = {
@@ -388,54 +393,66 @@ class StairDetector:
 class SensorFusion:
     """
     Merges front camera detections, back camera detections, and ToF distances
-    into per-zone threat levels. Enforces anti-overload (max 2 active zones).
+    into 6 motor zones:
+      f  = DFRobot Front  (straight ahead)
+      fr = Coin FrontRight (front-right 45°)
+      fl = Coin FrontLeft  (front-left  45°)
+      bl = Coin BackLeft   (back-left   45°)
+      br = Coin BackRight  (back-right  45°)
+      b  = DFRobot Back   (straight behind)
+
+    Camera differentiates FL vs F vs FR for front.
+    Each zone fires independently — no artificial overload cap.
     """
 
     def fuse(self, front_dets, back_dets, tof_data):
-        """
-        Returns dict: zone_name → {level, distance_mm, source}
-        """
-        # Seed zones from ToF
-        zones = {
-            direction: {
-                'level':       self._dist_level(mm),
-                'distance_mm': mm,
-                'source':      'tof',
-            }
-            for direction, mm in tof_data.items()
-        }
+        """Returns dict: zone_name → {level, distance_mm, source}"""
+        safe = lambda mm: {'level': 'safe', 'distance_mm': mm, 'source': 'none'}
 
-        # Front camera → front zone + left/right inference
+        zones = {z: safe(2000) for z in ('f', 'fr', 'fl', 'bl', 'br', 'b')}
+
+        # Seed from ToF sensors
+        front_mm = tof_data.get('front', 2000)
+        left_mm  = tof_data.get('left',  2000)
+        right_mm = tof_data.get('right', 2000)
+        back_mm  = tof_data.get('back',  2000)
+
+        # Front sensor → DFRobot front motor (straight ahead)
+        zones['f']  = {'level': self._dist_level(front_mm), 'distance_mm': front_mm, 'source': 'tof'}
+        # Left sensor → FL coin motor (front-left 45° most relevant for walking)
+        zones['fl'] = {'level': self._dist_level(left_mm),  'distance_mm': left_mm,  'source': 'tof'}
+        # Right sensor → FR coin motor
+        zones['fr'] = {'level': self._dist_level(right_mm), 'distance_mm': right_mm, 'source': 'tof'}
+        # Back sensor → DFRobot back motor
+        zones['b']  = {'level': self._dist_level(back_mm),  'distance_mm': back_mm,  'source': 'tof'}
+
+        # Front camera → refines f / fl / fr based on object position in frame
         for det in front_dets:
             if det['level'] == 'safe':
                 continue
-            self._upgrade(zones, 'front', det['level'], 'camera')
-            if det['centerX'] < 0.35:
-                self._upgrade(zones, 'left',  det['level'], 'camera')
-            elif det['centerX'] > 0.65:
-                self._upgrade(zones, 'right', det['level'], 'camera')
+            cx = det.get('centerX', 0.5)
+            if cx < 0.40:
+                # Object on left side of frame → front-left coin
+                self._upgrade(zones, 'fl', det['level'], 'camera')
+            elif cx > 0.60:
+                # Object on right side of frame → front-right coin
+                self._upgrade(zones, 'fr', det['level'], 'camera')
+            else:
+                # Object centered → DFRobot front (strongest signal = "STOP")
+                self._upgrade(zones, 'f',  det['level'], 'camera')
 
-        # Back camera → back zone + left/right from mirrored centerX
+        # Back camera → refines b / bl / br (camera mounted reversed)
         for det in back_dets:
             if det['level'] == 'safe':
                 continue
-            self._upgrade(zones, 'back', det['level'], 'camera')
-            # Back camera is mounted reversed — mirror left/right
-            if det['centerX'] < 0.35:
-                self._upgrade(zones, 'right', det['level'], 'camera')
-            elif det['centerX'] > 0.65:
-                self._upgrade(zones, 'left',  det['level'], 'camera')
-
-        # Anti-overload: keep only MAX_ACTIVE_ZONES zones firing
-        active = [z for z in zones if zones[z]['level'] != 'safe']
-        if len(active) > MAX_ACTIVE_ZONES:
-            active.sort(key=lambda z: (
-                0 if z == 'front' else 1,
-                -THREAT_LEVELS.index(zones[z]['level']),
-                zones[z]['distance_mm'],
-            ))
-            for z in active[MAX_ACTIVE_ZONES:]:
-                zones[z]['level'] = 'safe'
+            cx = det.get('centerX', 0.5)
+            if cx < 0.35:
+                # Reversed: left in image = right on body
+                self._upgrade(zones, 'br', det['level'], 'camera')
+            elif cx > 0.65:
+                self._upgrade(zones, 'bl', det['level'], 'camera')
+            else:
+                self._upgrade(zones, 'b',  det['level'], 'camera')
 
         return zones
 
@@ -469,7 +486,7 @@ class ArduinoSerial:
         self._ser        = None
         self._last_zones = {}
         self.connected   = False
-        self._tof_front  = 2000  # default: clear
+        self._tof = {'front': 2000, 'left': 2000, 'right': 2000, 'back': 2000}
 
         if port:
             try:
@@ -483,37 +500,41 @@ class ArduinoSerial:
                 print('[arduino] Falling back to stdout logging')
 
     def read_tof(self):
-        """Drain serial buffer, parse TOF:xxx lines. Returns dict for SensorFusion."""
+        """Drain serial buffer, parse TOF0-3 lines. Returns dict for SensorFusion."""
         if self._ser:
             try:
                 while self._ser.in_waiting:
                     raw = self._ser.readline()
                     if raw:
                         line = raw.decode(errors='ignore').strip()
-                        if line.startswith('TOF:'):
-                            try:
-                                self._tof_front = int(line[4:])
-                                print(f'[tof] front={self._tof_front}mm')
-                            except ValueError:
-                                pass
+                        for idx, direction in TOF_MAP.items():
+                            prefix = f'TOF{idx}:'
+                            if line.startswith(prefix):
+                                try:
+                                    self._tof[direction] = int(line[len(prefix):])
+                                    print(f'[tof] {direction}={self._tof[direction]}mm')
+                                except ValueError:
+                                    pass
             except Exception:
                 pass
-        return {
-            'front': self._tof_front,
-            'back':  2000,
-            'left':  2000,
-            'right': 2000,
-        }
+        return dict(self._tof)
 
     def send_zones(self, zones):
         for zone, data in zones.items():
-            if zone == 'state':
+            level   = data['level']
+            zone_id = ZONE_IDS.get(zone, -1)
+            if zone_id < 0:
                 continue
-            level = data['level']
             if self._last_zones.get(zone) == level:
                 continue
             self._last_zones[zone] = level
-            self._tx(f'ZONE {ZONE_IDS[zone]} {LEVEL_IDS[level]}')
+            self._tx(f'ZONE:{zone_id}:{LEVEL_IDS[level]}')
+
+    def send_stair(self):
+        self._tx('STAIR')
+
+    def send_beat(self):
+        self._tx('BEAT')
 
     def send_system(self, pattern_id):
         self._tx(f'SYS {pattern_id}')
@@ -766,10 +787,12 @@ def main():
     arduino.send_system(0)
     print('\n[bridge] Running.  Ctrl+C or Q to quit.\n')
 
-    frame_count = 0
-    fps         = 0.0
-    fps_t0      = time.time()
-    fps_frames  = 0
+    frame_count     = 0
+    fps             = 0.0
+    fps_t0          = time.time()
+    fps_frames      = 0
+    last_beat       = time.time()
+    last_stair_cmd  = 0.0
 
     try:
         while True:
@@ -807,6 +830,17 @@ def main():
 
             # ── Arduino ───────────────────────────────────────────────────
             arduino.send_zones(zones)
+
+            now = time.time()
+            # Stair warning — distinctive pattern, max once per 3s
+            if (stair_f or stair_b) and (now - last_stair_cmd) > 3.0:
+                arduino.send_stair()
+                last_stair_cmd = now
+
+            # Heartbeat — every 5s so user knows system is running
+            if (now - last_beat) > 5.0:
+                arduino.send_beat()
+                last_beat = now
 
             # ── Emit front ───────────────────────────────────────────────
             if flag_front[0]:
