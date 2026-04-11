@@ -5,7 +5,7 @@ POST /chat {"message": "..."} → {"response": "..."}
 import json, urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-GOOGLE_KEY   = "AIzaSyCNdzgY9yRnPlitlq6eYH4SLiK9E3pNgbk"
+GOOGLE_KEY   = "YOUR_GEMINI_KEY_HERE"
 GEMINI_MODEL = "gemini-2.5-flash"
 SYSTEM_PROMPT = """You are Navi, an AI assistant for an orientation system for visually impaired people. You help with navigation, answer questions about the environment, and give short precise answers. Always respond in English. Keep answers to 2-3 sentences maximum."""
 
