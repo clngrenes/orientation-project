@@ -9,11 +9,21 @@ Usage:
 import urllib.request
 import json
 import subprocess
+import base64
+import os
 
 ELEVENLABS_KEY = "YOUR_ELEVENLABS_KEY_HERE"
 OPENAI_KEY     = "YOUR_OPENAI_KEY_HERE"
 VOICE_ID       = "21m00Tcm4TlvDq8ikWAM"  # Rachel
 OPENCLAW_URL   = "http://46.224.48.111:5001/chat"
+
+# Keywords that trigger the camera
+VISION_KEYWORDS = [
+    "what do you see", "was siehst du", "what's in front",
+    "what is in front", "was ist vor mir", "describe what you see",
+    "look around", "schau", "what's behind", "was ist hinter mir",
+    "what's around", "was ist um mich"
+]
 
 history = []
 
@@ -44,12 +54,32 @@ def transcribe(audio_path):
     except Exception:
         return ""
 
-def ask_openclaw(user_text):
-    """Send message to OpenClaw server, get AI response."""
+def is_vision_request(text):
+    """Check if the user is asking about what the camera sees."""
+    text_lower = text.lower()
+    return any(kw in text_lower for kw in VISION_KEYWORDS)
+
+def capture_photo():
+    """Take a photo with the webcam and return base64-encoded JPEG."""
+    photo_path = "/tmp/navi_cam.jpg"
+    result = subprocess.run(
+        ["fswebcam", "-r", "640x480", "--no-banner", "-q", photo_path],
+        capture_output=True
+    )
+    if result.returncode != 0 or not os.path.exists(photo_path):
+        return None
+    with open(photo_path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
+
+def ask_openclaw(user_text, image_b64=None):
+    """Send message (and optional image) to OpenClaw server."""
     global history
-    payload = json.dumps({"message": user_text, "history": history}).encode()
+    payload = {"message": user_text, "history": history}
+    if image_b64:
+        payload["image"] = image_b64
+    data = json.dumps(payload).encode()
     req = urllib.request.Request(
-        OPENCLAW_URL, data=payload,
+        OPENCLAW_URL, data=data,
         headers={"Content-Type": "application/json"}
     )
     with urllib.request.urlopen(req) as r:
@@ -84,7 +114,17 @@ while True:
             continue
         print(f"You: {text}")
         print("Navi: ...")
-        reply = ask_openclaw(text)
+
+        image_b64 = None
+        if is_vision_request(text):
+            print("📷 Taking photo...")
+            image_b64 = capture_photo()
+            if image_b64:
+                print("Photo captured.")
+            else:
+                print("Camera failed — asking without image.")
+
+        reply = ask_openclaw(text, image_b64)
         print(f"Navi: {reply}")
         speak(reply)
     except KeyboardInterrupt:

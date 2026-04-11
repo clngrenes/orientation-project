@@ -1,6 +1,7 @@
 """
 Navi API — kein Flask, nur Python stdlib
-POST /chat {"message": "..."} → {"response": "..."}
+POST /chat {"message": "...", "history": [...], "image": "BASE64_OPTIONAL"}
+→ {"response": "...", "history": [...]}
 """
 import json, urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -19,25 +20,44 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         try:
-            length = int(self.headers.get('Content-Length', 0))
-            body   = json.loads(self.rfile.read(length))
+            length  = int(self.headers.get('Content-Length', 0))
+            body    = json.loads(self.rfile.read(length))
             message = body.get('message', '')
             history = body.get('history', [])
-            history.append({"role": "user", "parts": [{"text": message}]})
+            image   = body.get('image', None)   # base64 JPEG, optional
+
+            # Build the user turn — text only, or text + image
+            if image:
+                user_parts = [
+                    {"text": message},
+                    {"inline_data": {"mime_type": "image/jpeg", "data": image}}
+                ]
+            else:
+                user_parts = [{"text": message}]
+
+            history.append({"role": "user", "parts": user_parts})
+
             payload = json.dumps({
                 "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
                 "contents": history
             }).encode()
+
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GOOGLE_KEY}"
             req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req) as r:
                 result = json.load(r)
+
             reply = result["candidates"][0]["content"]["parts"][0]["text"]
+
+            # Store only the text in history (not the image — saves memory)
+            history[-1] = {"role": "user", "parts": [{"text": message}]}
             history.append({"role": "model", "parts": [{"text": reply}]})
+
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({"response": reply, "history": history}).encode())
+
         except Exception as e:
             print(f"Error: {e}")
             self.send_response(500)
