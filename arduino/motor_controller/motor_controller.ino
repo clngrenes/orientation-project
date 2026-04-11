@@ -1,17 +1,16 @@
 /*
  * ORIENTATION — Motor Controller
- * 6 vibration motors + 4 VL53L0X distance sensors
+ * 6 vibration motors + 2 VL53L0X distance sensors
  *
  * Motor layout on collar:
  *          FRONT
  *       [F — DFRobot]    pin 9
- *   FL(coin)    FR(coin) pins 3, 5
- *   BL(coin)    BR(coin) pins 6, 11
- *       [B — DFRobot]    pin 10
+ *   FL(coin)    FR(coin) pins 7, 2
+ *   BL(coin)    BR(coin) pins 4, 6
+ *       [B — DFRobot]    pin 12
  *          BACK
  *
- * XSHUT pins for VL53L0X: D2, D4, D7, D8
- * (pins 7+8 are XSHUT — NOT motor pins!)
+ * XSHUT pins for VL53L0X: D11, D5
  *
  * Commands from Pi (serial, 9600 baud):
  *   ZONE:X:Y    X = motor zone 0-5, Y = level 0-3
@@ -20,11 +19,11 @@
  *
  * Zone IDs:
  *   0 = F  (DFRobot Front,  pin 9)
- *   1 = FR (Coin FrontRight, pin 5)
- *   2 = FL (Coin FrontLeft,  pin 3)
- *   3 = BL (Coin BackLeft,   pin 6)
- *   4 = BR (Coin BackRight,  pin 11)
- *   5 = B  (DFRobot Back,   pin 10)
+ *   1 = FR (Coin FrontRight, pin 2)
+ *   2 = FL (Coin FrontLeft,  pin 7)
+ *   3 = BL (Coin BackLeft,   pin 4)
+ *   4 = BR (Coin BackRight,  pin 6)
+ *   5 = B  (DFRobot Back,   pin 12)
  *
  * Pulsing (non-blocking, millis-based):
  *   Level 0: silent
@@ -38,7 +37,7 @@
 
 // ── Motors ──────────────────────────────────────────────────────────────────
 const int NUM_MOTORS = 6;
-const int MOTOR_PINS[NUM_MOTORS] = {9, 5, 3, 6, 11, 10};
+const int MOTOR_PINS[NUM_MOTORS] = {9, 2, 7, 4, 6, 12};
 // Zone:                            F  FR  FL  BL  BR   B
 
 // Pulse timing per level [period_ms, on_ms]
@@ -51,9 +50,9 @@ unsigned long lastPeriodStart[NUM_MOTORS] = {0};
 bool          pulseOn[NUM_MOTORS]         = {false};
 
 // ── VL53L0X sensors ──────────────────────────────────────────────────────────
-const int NUM_SENSORS = 4;
-const int XSHUT_PINS[NUM_SENSORS]      = {2, 4, 7, 8};
-const uint8_t SENSOR_ADDRS[NUM_SENSORS] = {0x30, 0x31, 0x32, 0x33};
+const int NUM_SENSORS = 2;
+const int XSHUT_PINS[NUM_SENSORS]      = {11, 5};
+const uint8_t SENSOR_ADDRS[NUM_SENSORS] = {0x30, 0x31};
 VL53L0X sensors[NUM_SENSORS];
 bool    sensorOK[NUM_SENSORS];
 
@@ -128,14 +127,12 @@ void updateMotors() {
     }
     unsigned long elapsed = now - lastPeriodStart[i];
     if (!pulseOn[i]) {
-      // Start new pulse when period elapsed
       if (elapsed >= PERIOD_MS[lvl]) {
         digitalWrite(MOTOR_PINS[i], HIGH);
         pulseOn[i] = true;
         lastPeriodStart[i] = now;
       }
     } else {
-      // End pulse when on-time elapsed
       if (elapsed >= ON_MS[lvl]) {
         digitalWrite(MOTOR_PINS[i], LOW);
         pulseOn[i] = false;
@@ -144,10 +141,9 @@ void updateMotors() {
   }
 }
 
-// ── Special patterns (use delay — intentional one-shot events) ───────────────
+// ── Special patterns ─────────────────────────────────────────────────────────
 
 void playStair() {
-  // All 6 motors: 5 rapid pulses — unmistakable stair warning
   for (int p = 0; p < 5; p++) {
     for (int i = 0; i < NUM_MOTORS; i++) digitalWrite(MOTOR_PINS[i], HIGH);
     delay(80);
@@ -157,8 +153,7 @@ void playStair() {
 }
 
 void playBeat() {
-  // Front motors only: single 40ms pulse (system alive)
-  // F=0, FR=1, FL=2
+  // Front motors only: F=0, FR=1, FL=2
   digitalWrite(MOTOR_PINS[0], HIGH);
   digitalWrite(MOTOR_PINS[1], HIGH);
   digitalWrite(MOTOR_PINS[2], HIGH);
@@ -171,23 +166,19 @@ void playBeat() {
 // ── Serial command handling ──────────────────────────────────────────────────
 
 void handleCommand() {
-  // ZONE:X:Y
   if (buf[0]=='Z' && buf[1]=='O' && buf[2]=='N' && buf[3]=='E') {
     int zone  = buf[5] - '0';
     int level = buf[7] - '0';
     if (zone >= 0 && zone < NUM_MOTORS && level >= 0 && level <= 3) {
       motorLevel[zone] = level;
-      // Reset pulse timing so new level takes effect immediately
       lastPeriodStart[zone] = millis() - PERIOD_MS[max(level, 1)];
       pulseOn[zone] = false;
       digitalWrite(MOTOR_PINS[zone], LOW);
     }
   }
-  // STAIR
   else if (buf[0]=='S' && buf[1]=='T' && buf[2]=='A') {
     playStair();
   }
-  // BEAT
   else if (buf[0]=='B' && buf[1]=='E' && buf[2]=='A') {
     playBeat();
   }
@@ -216,7 +207,6 @@ void readAndSendTof() {
 // ── Main loop ────────────────────────────────────────────────────────────────
 
 void loop() {
-  // Read serial commands
   while (Serial.available()) {
     char c = Serial.read();
     if (c == '\n' || c == '\r') {
@@ -230,9 +220,6 @@ void loop() {
     }
   }
 
-  // Update motor pulsing (non-blocking)
   updateMotors();
-
-  // Send sensor readings
   readAndSendTof();
 }
