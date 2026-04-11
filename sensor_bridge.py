@@ -47,18 +47,24 @@ THRESHOLDS = {
     'back':  {'danger': 0.50, 'warning': 0.32, 'notice': 0.15},  # back needs to be very close
 }
 
-# ToF distance thresholds in mm
-TOF_DANGER  = 500
-TOF_WARNING = 1000
-TOF_NOTICE  = 1500
+# ToF distance thresholds in mm (used only when approaching)
+TOF_DANGER  = 800    # raised — only triggers when actively approaching
+TOF_WARNING = 1200
+TOF_NOTICE  = 1800
+
+# Velocity thresholds (mm/s, negative = approaching)
+VEL_DANGER  = -150   # fast approach
+VEL_WARNING = -50    # slow approach
+VEL_AWAY    =  50    # moving away → always safe
+
+# Stable obstacle forgiveness: reduce alert after N seconds of no movement
+STABLE_REDUCE_S = 8    # downgrade to Notice after 8s stable
+STABLE_SILENT_S = 30   # silent after 30s stable (known obstacle / conversation)
 
 # Class stability: N consecutive inference frames before triggering alerts
 STABILITY_CONFIRM = 3
 STABILITY_MAX     = 10
 STABILITY_DECAY   = 2   # frames subtracted per missing frame
-
-# Anti-overload: max zones firing simultaneously
-MAX_ACTIVE_ZONES = 2
 
 # Frame skip for dashboard streaming (every Nth frame)
 FRAME_SEND_INTERVAL = 5
@@ -387,6 +393,99 @@ class StairDetector:
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# DISTANCE TRACKER — velocity + stability per direction
+# ════════════════════════════════════════════════════════════════════════════
+
+class DistanceTracker:
+    """
+    Tracks the last few distance readings per direction and computes:
+      - velocity_mms: mm/s (negative = approaching, positive = moving away)
+      - stable_since: seconds the distance has been roughly unchanged
+      - adjusted threat level based on velocity + stability
+
+    This prevents false alarms when standing still near a person or obstacle.
+    """
+
+    HISTORY = 4          # number of samples to keep per direction
+    STABLE_BAND = 60     # mm — within this band = "stable"
+
+    def __init__(self):
+        self._readings = {}   # direction → [(timestamp, mm), ...]
+
+    def update(self, direction, mm):
+        """Add a new reading. Call every sensor cycle."""
+        now = time.time()
+        hist = self._readings.setdefault(direction, [])
+        hist.append((now, mm))
+        if len(hist) > self.HISTORY:
+            hist.pop(0)
+
+    def velocity(self, direction):
+        """Returns velocity in mm/s. Negative = approaching. 0 if not enough data."""
+        hist = self._readings.get(direction, [])
+        if len(hist) < 2:
+            return 0.0
+        t0, d0 = hist[0]
+        t1, d1 = hist[-1]
+        dt = t1 - t0
+        if dt < 0.05:
+            return 0.0
+        return (d1 - d0) / dt   # negative = getting closer
+
+    def stable_since(self, direction):
+        """Returns how many seconds the distance has been within STABLE_BAND mm."""
+        hist = self._readings.get(direction, [])
+        if len(hist) < 2:
+            return 0.0
+        latest_mm = hist[-1][1]
+        # Walk backwards to find first sample outside the stable band
+        for t, mm in reversed(hist[:-1]):
+            if abs(mm - latest_mm) > self.STABLE_BAND:
+                return time.time() - t
+        # All history is stable — use full window duration
+        return time.time() - hist[0][0]
+
+    def threat_level(self, direction, raw_mm):
+        """
+        Returns velocity-adjusted threat level string.
+
+        Rules:
+          - Moving away          → 'safe'  (don't care, you're diverging)
+          - Stable > 30s, close  → 'safe'  (known obstacle: wall, conversation partner)
+          - Stable > 8s, close   → 'notice' (soft awareness, not alarming)
+          - Approaching + close  → 'warning' or 'danger' based on speed + distance
+        """
+        vel    = self.velocity(direction)
+        stable = self.stable_since(direction)
+
+        # Moving away — always safe
+        if vel > VEL_AWAY:
+            return 'safe'
+
+        # Not close enough to care regardless of velocity
+        if raw_mm >= TOF_NOTICE:
+            return 'safe'
+
+        # Known/static obstacle — silence it
+        if stable > STABLE_SILENT_S and raw_mm < TOF_NOTICE:
+            return 'safe'
+
+        # Stable but nearby — low awareness buzz
+        if stable > STABLE_REDUCE_S and raw_mm < TOF_NOTICE:
+            return 'notice'
+
+        # Actively approaching — velocity + distance decide level
+        if vel <= VEL_DANGER and raw_mm < TOF_DANGER:
+            return 'danger'
+        if vel <= VEL_WARNING and raw_mm < TOF_WARNING:
+            return 'warning'
+        if raw_mm < TOF_NOTICE:
+            return 'notice'
+
+        return 'safe'
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # SENSOR FUSION
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -405,26 +504,38 @@ class SensorFusion:
     Each zone fires independently — no artificial overload cap.
     """
 
+    def __init__(self, tracker: 'DistanceTracker'):
+        self._tracker = tracker
+
     def fuse(self, front_dets, back_dets, tof_data):
-        """Returns dict: zone_name → {level, distance_mm, source}"""
-        safe = lambda mm: {'level': 'safe', 'distance_mm': mm, 'source': 'none'}
+        """Returns dict: zone_name → {level, distance_mm, source, velocity}"""
+        safe = lambda mm: {'level': 'safe', 'distance_mm': mm, 'source': 'none', 'velocity': 0.0}
 
         zones = {z: safe(2000) for z in ('f', 'fr', 'fl', 'bl', 'br', 'b')}
 
-        # Seed from ToF sensors
+        # Seed from ToF sensors — velocity-adjusted levels
         front_mm = tof_data.get('front', 2000)
         left_mm  = tof_data.get('left',  2000)
         right_mm = tof_data.get('right', 2000)
         back_mm  = tof_data.get('back',  2000)
 
+        for direction, mm in [('front', front_mm), ('left', left_mm),
+                               ('right', right_mm), ('back', back_mm)]:
+            self._tracker.update(direction, mm)
+
+        def tof_zone(direction, mm):
+            lvl = self._tracker.threat_level(direction, mm)
+            vel = self._tracker.velocity(direction)
+            return {'level': lvl, 'distance_mm': mm, 'source': 'tof', 'velocity': round(vel, 1)}
+
         # Front sensor → DFRobot front motor (straight ahead)
-        zones['f']  = {'level': self._dist_level(front_mm), 'distance_mm': front_mm, 'source': 'tof'}
-        # Left sensor → FL coin motor (front-left 45° most relevant for walking)
-        zones['fl'] = {'level': self._dist_level(left_mm),  'distance_mm': left_mm,  'source': 'tof'}
+        zones['f']  = tof_zone('front', front_mm)
+        # Left sensor → FL coin motor
+        zones['fl'] = tof_zone('left',  left_mm)
         # Right sensor → FR coin motor
-        zones['fr'] = {'level': self._dist_level(right_mm), 'distance_mm': right_mm, 'source': 'tof'}
+        zones['fr'] = tof_zone('right', right_mm)
         # Back sensor → DFRobot back motor
-        zones['b']  = {'level': self._dist_level(back_mm),  'distance_mm': back_mm,  'source': 'tof'}
+        zones['b']  = tof_zone('back',  back_mm)
 
         # Front camera → refines f / fl / fr based on object position in frame
         for det in front_dets:
@@ -462,12 +573,6 @@ class SensorFusion:
         if THREAT_LEVELS.index(new_level) > THREAT_LEVELS.index(zones[zone]['level']):
             zones[zone]['level']  = new_level
             zones[zone]['source'] = source
-
-    def _dist_level(self, mm):
-        if mm < TOF_DANGER:  return 'danger'
-        if mm < TOF_WARNING: return 'warning'
-        if mm < TOF_NOTICE:  return 'notice'
-        return 'safe'
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -767,7 +872,8 @@ def main():
     pipeline_back  = DetectionPipeline(role='back',  shared_model=shared_model)
     stairs_front   = StairDetector()
     stairs_back    = StairDetector()
-    fusion         = SensorFusion()
+    tracker        = DistanceTracker()
+    fusion         = SensorFusion(tracker)
 
     # ── Cameras ──────────────────────────────────────────────────────────
     cap_front = cap_back = None

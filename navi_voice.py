@@ -11,11 +11,22 @@ import json
 import subprocess
 import base64
 import os
+import time
 
 ELEVENLABS_KEY = "YOUR_ELEVENLABS_KEY_HERE"
 OPENAI_KEY     = "YOUR_OPENAI_KEY_HERE"
 VOICE_ID       = "21m00Tcm4TlvDq8ikWAM"  # Rachel
 OPENCLAW_URL   = "http://46.224.48.111:5001/chat"
+
+# Keywords that pause haptic alerts (e.g. during conversations)
+PAUSE_KEYWORDS = [
+    "pause", "mute", "stop vibrating", "quiet", "silent mode",
+    "pause alerts", "mute alerts", "ich rede gerade", "pause bitte",
+    "stopp vibrieren", "ruhe"
+]
+PAUSE_DURATION = 30  # seconds
+
+haptic_paused_until = 0.0
 
 # Keywords that trigger the camera
 VISION_KEYWORDS = [
@@ -58,6 +69,11 @@ def is_vision_request(text):
     """Check if the user is asking about what the camera sees."""
     text_lower = text.lower()
     return any(kw in text_lower for kw in VISION_KEYWORDS)
+
+def is_pause_request(text):
+    """Check if the user wants to pause haptic alerts."""
+    text_lower = text.lower()
+    return any(kw in text_lower for kw in PAUSE_KEYWORDS)
 
 def capture_photo():
     """Take a photo with the webcam and return base64-encoded JPEG."""
@@ -113,6 +129,16 @@ while True:
             print("Nothing heard — try again.")
             continue
         print(f"You: {text}")
+
+        # Pause haptic alerts on request
+        if is_pause_request(text):
+            global haptic_paused_until
+            haptic_paused_until = time.time() + PAUSE_DURATION
+            reply = f"Alerts paused for {PAUSE_DURATION} seconds."
+            print(f"Navi: {reply}")
+            speak(reply)
+            continue
+
         print("Navi: ...")
 
         image_b64 = None
