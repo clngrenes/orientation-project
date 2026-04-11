@@ -18,25 +18,32 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(b"Navi API running")
 
     def do_POST(self):
-        length = int(self.headers.get('Content-Length', 0))
-        body   = json.loads(self.rfile.read(length))
-        message = body.get('message', '')
-        history = body.get('history', [])
-        history.append({"role": "user", "parts": [{"text": message}]})
-        payload = json.dumps({
-            "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-            "contents": history
-        }).encode()
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GOOGLE_KEY}"
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req) as r:
-            result = json.load(r)
-        reply = result["candidates"][0]["content"]["parts"][0]["text"]
-        history.append({"role": "model", "parts": [{"text": reply}]})
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps({"response": reply, "history": history}).encode())
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            body   = json.loads(self.rfile.read(length))
+            message = body.get('message', '')
+            history = body.get('history', [])
+            history.append({"role": "user", "parts": [{"text": message}]})
+            payload = json.dumps({
+                "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+                "contents": history
+            }).encode()
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GOOGLE_KEY}"
+            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req) as r:
+                result = json.load(r)
+            reply = result["candidates"][0]["content"]["parts"][0]["text"]
+            history.append({"role": "model", "parts": [{"text": reply}]})
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"response": reply, "history": history}).encode())
+        except Exception as e:
+            print(f"Error: {e}")
+            self.send_response(500)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
 
 print("Navi API läuft auf Port 5001...")
 HTTPServer(('0.0.0.0', 5001), Handler).serve_forever()
