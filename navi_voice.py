@@ -66,21 +66,15 @@ def ask_gemini(user_text):
     return reply
 
 def speak(text):
-    payload = json.dumps({
-        "text": text,
-        "model_id": "eleven_multilingual_v2",
-        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
-    }).encode()
-    req = urllib.request.Request(
+    subprocess.run([
+        "curl", "-s", "-X", "POST",
         f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}",
-        data=payload,
-        headers={
-            "xi-api-key": ELEVENLABS_KEY,
-            "Content-Type": "application/json"
-        }
-    )
-    with urllib.request.urlopen(req) as r:
-        open("/tmp/navi_reply.mp3", "wb").write(r.read())
+        "-H", f"xi-api-key: {ELEVENLABS_KEY}",
+        "-H", "Content-Type: application/json",
+        "-d", json.dumps({"text": text, "model_id": "eleven_monolingual_v1",
+                          "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}}),
+        "-o", "/tmp/navi_reply.mp3"
+    ])
     subprocess.run(["mpg123", "-q", "/tmp/navi_reply.mp3"])
 
 print("Navi is ready.")
