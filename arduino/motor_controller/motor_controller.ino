@@ -38,7 +38,7 @@
 
 // ── Motors ──────────────────────────────────────────────────────────────────
 const int NUM_MOTORS = 6;
-const int MOTOR_PINS[NUM_MOTORS] = {9, 5, 3, 6, 11, 10};
+const int MOTOR_PINS[NUM_MOTORS] = {9, 5, 3, 6, 11, 12};
 // Zone:                            F  FR  FL  BL  BR   B
 
 // Pulse timing per level [period_ms, on_ms]
