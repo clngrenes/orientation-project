@@ -605,6 +605,36 @@ No speaker/microphone on collar — earphone-based audio only. Bluetooth earphon
 
 ---
 
+## Step 21 — Full Voice Pipeline: Pi → OpenClaw (Hetzner) → Gemini → ElevenLabs (11.04.2026)
+
+**Goal:** Connect navi_voice.py on Pi to the OpenClaw server on Hetzner instead of calling Gemini directly, so the server can later add Maps API, context, and extensibility.
+
+**navi_api.py deployed on Hetzner (46.224.48.111:5001):**
+- Python stdlib `HTTPServer` — no Flask needed (not installed on server)
+- POST `/chat` accepts `{"message": "...", "history": [...]}`, calls Gemini 2.5 Flash, returns `{"response": "...", "history": [...]}`
+- Conversation history maintained across turns by passing history back and forth
+- Port 5001 opened in Hetzner firewall
+- Server kept alive with `nohup ... & disown`
+
+**navi_voice.py updated on Pi:**
+- `record_audio()` — arecord from mic, Enter to start/stop
+- `transcribe()` — OpenAI Whisper API via curl subprocess
+- `ask_openclaw()` — POST to `http://46.224.48.111:5001/chat`, receives response + updated history
+- `speak()` — ElevenLabs via curl → /tmp/navi_reply.mp3 → mpg123 → BT headphones
+
+**Bugs fixed along the way:**
+- Gemini API key auto-revoked twice by Google (committed to GitHub) → switched to placeholder in repo, real key set on server only via `sed -i`
+- `eleven_multilingual_v2` requires paid plan → downgraded to `eleven_monolingual_v1`
+- ElevenLabs 403 with urllib → fixed by using `curl` subprocess in `speak()`
+- Flask not available on server → replaced with stdlib `HTTPServer`
+- Server crashing on Gemini error → wrapped `do_POST` in try/except, returns JSON 500
+
+**Confirmed working (11.04.2026):**
+Full voice loop: Mic → Whisper STT → OpenClaw/Hetzner → Gemini 2.5 Flash → ElevenLabs TTS → BT headphones.
+User spoke in English → Navi transcribed, sent to Hetzner, got AI response, spoke back via headphones.
+
+---
+
 ## Decisions Already Made (do not revisit)
 
 | Decision | Choice | Reason |
@@ -619,6 +649,34 @@ No speaker/microphone on collar — earphone-based audio only. Bluetooth earphon
 | Max simultaneous zones | 2 | Anti-overload; more = confusion |
 | Voice assistant | OpenClaw / Navi on Hetzner | Reliable, always-on, not running on battery-limited Pi |
 | Design language | Faux-fur soft collar | Fashion accessory aesthetic, not medical device |
+
+---
+
+## Step 22 — Sound + Vibration Feedback System (11.04.2026)
+
+**Goal:** Add simultaneous audio + haptic alerts for critical situations where vibration alone is not enough.
+
+**espeak installed on Pi** (`sudo apt-get install -y espeak`) — offline TTS, no API cost, non-blocking.
+
+**5 cases implemented:**
+
+| Case | Sound | Vibration | File |
+|---|---|---|---|
+| System startup | `espeak "Navi ready"` | Beat (front motors) | sensor_bridge.py |
+| Stairs confirmed | `espeak "Stairs"` | All 6 motors STAIR pattern | sensor_bridge.py |
+| Extreme danger (<40cm + fast approach) | `espeak "Stop"` | Already in danger zone | sensor_bridge.py |
+| Server unreachable | `espeak "Server offline"` + ElevenLabs sentence | — | navi_voice.py |
+| Haptic pause ends | `espeak "Alerts active"` | — | navi_voice.py |
+
+**`speak_async()` function** added to both files — uses `subprocess.Popen` (non-blocking, fire-and-forget). Falls back silently if espeak missing.
+
+**Edge cases hardened in navi_voice.py:**
+- `capture_photo()`: `timeout=8` on fswebcam + file size check (<5KB = dark/unusable image rejected)
+- `urlopen()`: `timeout=15` to prevent hanging on slow server
+- Camera failure: spoken error message instead of silent fallback
+- Server error: `speak_async("Server offline")` fires immediately before ElevenLabs response
+
+**System-prompt updated on Hetzner** (navi_api.py): Navi now explicitly refuses to invent location if user never mentioned it — says "I don't know your location" instead.
 
 ---
 

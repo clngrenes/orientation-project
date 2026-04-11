@@ -26,6 +26,7 @@ import argparse
 import base64
 import math
 import random
+import subprocess
 import sys
 import time
 from collections import defaultdict
@@ -56,6 +57,10 @@ TOF_NOTICE  = 1800
 VEL_DANGER  = -150   # fast approach
 VEL_WARNING = -50    # slow approach
 VEL_AWAY    =  50    # moving away → always safe
+
+# Extreme danger: distance + velocity threshold for simultaneous sound alert
+EXTREME_DANGER_MM  = 400   # mm — very close
+EXTREME_DANGER_VEL = -200  # mm/s — fast approach
 
 # Stable obstacle forgiveness: reduce alert after N seconds of no movement
 STABLE_REDUCE_S = 8    # downgrade to Notice after 8s stable
@@ -707,6 +712,22 @@ class ArduinoSerial:
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# AUDIO ALERTS (offline, non-blocking)
+# ════════════════════════════════════════════════════════════════════════════
+
+def speak_async(text, speed=145):
+    """Fire-and-forget espeak. Does not block the main loop.
+    Falls back silently if espeak is not installed."""
+    try:
+        subprocess.Popen(
+            ['espeak', '-s', str(speed), text],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+    except FileNotFoundError:
+        pass  # espeak not installed — skip silently
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # CAMERA HELPERS
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -937,16 +958,21 @@ def main():
             if cap_back is None:
                 print('[bridge] Back camera unavailable')
 
-    # ── Startup haptic signal ─────────────────────────────────────────────
+    # ── Startup: haptic + sound simultaneously ────────────────────────────
     arduino.send_system(0)
+    speak_async("Navi ready")
     print('\n[bridge] Running.  Ctrl+C or Q to quit.\n')
 
-    frame_count     = 0
-    fps             = 0.0
-    fps_t0          = time.time()
-    fps_frames      = 0
-    last_beat       = time.time()
-    last_stair_cmd  = 0.0
+    frame_count          = 0
+    fps                  = 0.0
+    fps_t0               = time.time()
+    fps_frames           = 0
+    last_beat            = time.time()
+    last_stair_cmd       = 0.0
+    last_danger_sound    = 0.0   # cooldown for extreme-danger sound
+    last_server_sound    = 0.0   # cooldown for server-offline sound
+    DANGER_SOUND_CD      = 4.0   # seconds between extreme-danger alerts
+    SERVER_SOUND_CD      = 10.0  # seconds between server-offline alerts
 
     try:
         while True:
@@ -992,12 +1018,22 @@ def main():
                 key=lambda l: {'clear': 0, 'soft': 1, 'confirmed': 2}.get(l, 0)
             )
             if stair_level == 'confirmed' and (now - last_stair_cmd) > 3.0:
-                arduino.send_stair()   # all 6 motors — full alarm
+                arduino.send_stair()        # all 6 motors — full alarm
+                speak_async("Stairs")       # simultaneous voice alert
                 last_stair_cmd = now
             elif stair_level == 'soft' and (now - last_stair_cmd) > 3.0:
                 # Gentle nudge: just front motors at Notice level
                 arduino._tx('ZONE:0:1')  # F notice
                 arduino._tx('ZONE:1:1')  # FR notice
+
+            # Extreme danger: very close + fast approach → sound + vibration
+            front_mm  = tof_data.get('front', 2000)
+            front_vel = tracker.velocity('front')
+            if (front_mm < EXTREME_DANGER_MM
+                    and front_vel < EXTREME_DANGER_VEL
+                    and (now - last_danger_sound) > DANGER_SOUND_CD):
+                speak_async("Stop", speed=160)
+                last_danger_sound = now
 
             # Heartbeat — every 5s so user knows system is running
             if (now - last_beat) > 5.0:
