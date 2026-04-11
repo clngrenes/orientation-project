@@ -2,15 +2,20 @@
  * ORIENTATION — Motor Controller
  * 6 vibration motors + 2 VL53L0X distance sensors
  *
+ * Confirmed wiring (soldered with Anna, 2026-04-11):
+ *   DFNinja motors:   D9 (front), D12 (back)
+ *   Coin motors:      D2, D4, D6, D7
+ *   VL53L0X XSHUT:   D5, D11
+ *
  * Motor layout on collar:
  *          FRONT
- *       [F — DFRobot]    pin 9
+ *       [F — DFNinja]    pin 9
  *   FL(coin)    FR(coin) pins 7, 2
  *   BL(coin)    BR(coin) pins 4, 6
- *       [B — DFRobot]    pin 12
+ *       [B — DFNinja]    pin 12
  *          BACK
  *
- * XSHUT pins for VL53L0X: D11, D5
+ * XSHUT pins for VL53L0X: D5, D11
  *
  * Commands from Pi (serial, 9600 baud):
  *   ZONE:X:Y    X = motor zone 0-5, Y = level 0-3
