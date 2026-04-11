@@ -5,10 +5,13 @@
  * Motor layout on collar:
  *          FRONT
  *       [F — DFRobot]    pin 9
- *   FL(coin)    FR(coin) pins 7, 10
- *   BL(coin)    BR(coin) pins 6, 12
- *       [B — DFRobot]    pin 8
+ *   FL(coin)    FR(coin) pins 3, 5
+ *   BL(coin)    BR(coin) pins 6, 11
+ *       [B — DFRobot]    pin 10
  *          BACK
+ *
+ * XSHUT pins for VL53L0X: D2, D4, D7, D8
+ * (pins 7+8 are XSHUT — NOT motor pins!)
  *
  * Commands from Pi (serial, 9600 baud):
  *   ZONE:X:Y    X = motor zone 0-5, Y = level 0-3
@@ -17,11 +20,11 @@
  *
  * Zone IDs:
  *   0 = F  (DFRobot Front,  pin 9)
- *   1 = FR (Coin FrontRight, pin 10)
- *   2 = FL (Coin FrontLeft,  pin 7)
+ *   1 = FR (Coin FrontRight, pin 5)
+ *   2 = FL (Coin FrontLeft,  pin 3)
  *   3 = BL (Coin BackLeft,   pin 6)
- *   4 = BR (Coin BackRight,  pin 12)
- *   5 = B  (DFRobot Back,   pin 8)
+ *   4 = BR (Coin BackRight,  pin 11)
+ *   5 = B  (DFRobot Back,   pin 10)
  *
  * Pulsing (non-blocking, millis-based):
  *   Level 0: silent
@@ -35,7 +38,7 @@
 
 // ── Motors ──────────────────────────────────────────────────────────────────
 const int NUM_MOTORS = 6;
-const int MOTOR_PINS[NUM_MOTORS] = {9, 10, 7, 6, 12, 8};
+const int MOTOR_PINS[NUM_MOTORS] = {9, 5, 3, 6, 11, 10};
 // Zone:                            F  FR  FL  BL  BR   B
 
 // Pulse timing per level [period_ms, on_ms]
@@ -49,7 +52,7 @@ bool          pulseOn[NUM_MOTORS]         = {false};
 
 // ── VL53L0X sensors ──────────────────────────────────────────────────────────
 const int NUM_SENSORS = 4;
-const int XSHUT_PINS[NUM_SENSORS]      = {2, 3, 4, 5};
+const int XSHUT_PINS[NUM_SENSORS]      = {2, 4, 7, 8};
 const uint8_t SENSOR_ADDRS[NUM_SENSORS] = {0x30, 0x31, 0x32, 0x33};
 VL53L0X sensors[NUM_SENSORS];
 bool    sensorOK[NUM_SENSORS];
