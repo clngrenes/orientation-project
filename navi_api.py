@@ -6,10 +6,10 @@ POST /analyze {"image": "BASE64"}
               → {"zones": {"0": N, "1": N, "2": N}, "speech": "..."}
               zones: 0=front, 1=front-right, 2=front-left  |  N: 0=safe … 3=danger
 """
-import json, urllib.request
+import json, os, urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-GOOGLE_KEY   = "YOUR_GEMINI_KEY_HERE"
+GOOGLE_KEY   = os.environ.get("GOOGLE_KEY", "YOUR_GEMINI_KEY_HERE")
 GEMINI_MODEL = "gemini-2.5-flash"
 
 SYSTEM_PROMPT = """You are Navi, an AI assistant for an orientation system for visually impaired people. You help with navigation, answer questions about the environment, and give short precise answers. Always respond in English. Keep answers to 2-3 sentences maximum.
