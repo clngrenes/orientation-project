@@ -1,10 +1,15 @@
 """
-NAVI — Voice Assistant on Pi
-Drücke Enter → Kamera scannt → Motoren vibrieren je nach Richtung → Gemini beschreibt
+NAVI — Orientierungssystem für sehbehinderte Menschen
+Kamera scannt automatisch → Motoren vibrieren je nach Richtung der Gefahr
 
-Keys werden aus ~/.navi_config geladen (nie in git):
-    ELEVENLABS_KEY=sk_...
-    OPENAI_KEY=sk-proj-...
+Zone-Mapping (Collar-Position):
+  Zone 0 = Front  (DFNinja D9)    → Gefahr gerade voraus
+  Zone 1 = Rechts (Coin D2)       → Gefahr rechts
+  Zone 2 = Links  (Coin D7)       → Gefahr links
+
+Keys aus ~/.navi_config (nie in git):
+  ELEVENLABS_KEY=sk_...
+  OPENAI_KEY=sk-proj-...
 """
 
 import urllib.request
@@ -13,8 +18,9 @@ import subprocess
 import base64
 import os
 import time
+import threading
 
-# ── Config aus lokaler Datei laden (nie in git) ───────────────────────────────
+# ── Config laden (nie in git) ─────────────────────────────────────────────────
 def _load_config():
     cfg = {}
     path = os.path.expanduser("~/.navi_config")
@@ -26,16 +32,17 @@ def _load_config():
                 cfg[k.strip()] = v.strip()
     return cfg
 
-_cfg = _load_config()
+_cfg           = _load_config()
 ELEVENLABS_KEY = _cfg.get("ELEVENLABS_KEY", "")
 OPENAI_KEY     = _cfg.get("OPENAI_KEY", "")
 VOICE_ID       = "21m00Tcm4TlvDq8ikWAM"
-OPENCLAW_URL   = "http://46.224.48.111:5001/chat"
 ANALYZE_URL    = "http://46.224.48.111:5001/analyze"
 ARDUINO_PORT   = "/dev/ttyACM0"
+SCAN_INTERVAL  = 3   # Sekunden zwischen Scans
 
 # ── Arduino ───────────────────────────────────────────────────────────────────
-_arduino = None
+_arduino      = None
+_arduino_lock = threading.Lock()
 
 def _init_arduino():
     global _arduino
@@ -43,23 +50,54 @@ def _init_arduino():
         import serial
         _arduino = serial.Serial(ARDUINO_PORT, 9600, timeout=1)
         time.sleep(2)
-        print("Arduino connected.")
+        print("Arduino verbunden.")
     except Exception as e:
-        print(f"Arduino not available: {e}")
+        print(f"Arduino nicht erreichbar: {e}")
 
 def _send_zone(zone, level):
-    if _arduino and _arduino.is_open:
-        try:
-            _arduino.write(f"ZONE:{zone}:{level}\n".encode())
-        except Exception:
-            pass
+    with _arduino_lock:
+        if _arduino and _arduino.is_open:
+            try:
+                _arduino.write(f"ZONE:{zone}:{level}\n".encode())
+            except Exception:
+                pass
 
-def _clear_zones():
+def _clear_all_zones():
     for z in range(6):
         _send_zone(z, 0)
 
-# ── Kamera ────────────────────────────────────────────────────────────────────
-def capture_photo():
+# ── Kamera (cv2 — bleibt offen, kein Geräusch) ───────────────────────────────
+_cap      = None
+_cap_lock = threading.Lock()
+
+def _init_camera():
+    global _cap
+    try:
+        import cv2
+        _cap = cv2.VideoCapture(0)
+        if _cap.isOpened():
+            print("Kamera bereit.")
+        else:
+            _cap = None
+            print("Kamera nicht gefunden.")
+    except ImportError:
+        print("cv2 nicht installiert — nutze fswebcam als Fallback.")
+
+def _capture_frame():
+    """Gibt base64-JPEG zurück oder None."""
+    with _cap_lock:
+        if _cap and _cap.isOpened():
+            try:
+                import cv2
+                ret, frame = _cap.read()
+                if not ret:
+                    return None
+                _, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                return base64.b64encode(buf.tobytes()).decode()
+            except Exception:
+                return None
+
+    # Fallback: fswebcam
     photo_path = "/tmp/navi_cam.jpg"
     try:
         result = subprocess.run(
@@ -73,92 +111,68 @@ def capture_photo():
     if os.path.getsize(photo_path) < 5000:
         return None
     with open(photo_path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
+        return base64.b64encode(f.read()).decode()
 
-# ── Analyse → Motoren + Sprache ───────────────────────────────────────────────
-def analyze_and_vibrate():
-    print("Kamera...")
-    img = capture_photo()
-    if not img:
-        speak_async("Camera error")
-        return
+# ── Analyse-Loop (läuft im Hintergrund) ──────────────────────────────────────
+_current_zones = {}   # zone_id → level (was zuletzt gesetzt wurde)
+_scan_lock     = threading.Lock()
 
-    print("Analysiere...")
-    try:
-        data = json.dumps({"image": img}).encode()
-        req  = urllib.request.Request(
-            ANALYZE_URL, data=data,
-            headers={"Content-Type": "application/json"}
-        )
-        with urllib.request.urlopen(req, timeout=20) as r:
-            result = json.load(r)
-    except Exception as e:
-        print(f"Server error: {e}")
-        speak_async("Server offline")
-        return
+def _scan_loop():
+    """Scannt alle SCAN_INTERVAL Sekunden und setzt Motoren."""
+    print(f"Scanner startet (alle {SCAN_INTERVAL}s)...")
+    while True:
+        time.sleep(SCAN_INTERVAL)
+        img = _capture_frame()
+        if not img:
+            continue
 
-    zones  = result.get("zones", {})
-    speech = result.get("speech", "")
+        try:
+            data = json.dumps({"image": img}).encode()
+            req  = urllib.request.Request(
+                ANALYZE_URL, data=data,
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=20) as r:
+                result = json.load(r)
+        except Exception as e:
+            print(f"Scan-Fehler: {e}")
+            continue
 
-    # Motoren ansteuern
-    any_danger = False
-    for zone_str, level in zones.items():
-        level = int(level)
-        if level > 0:
-            _send_zone(int(zone_str), level)
-            any_danger = True
-            if level == 3:
-                speak_async("Stop", speed=160)
+        zones = result.get("zones", {})   # {"0": N, "1": N, "2": N}
 
-    if not any_danger:
-        print("Navi: Klar.")
-        speak_async("Clear")
-    elif speech:
-        print(f"Navi: {speech}")
-        speak(speech)
+        with _scan_lock:
+            # Alle 3 Frontzonen aktualisieren
+            for zone_str in ["0", "1", "2"]:
+                level = int(zones.get(zone_str, 0))
+                old   = _current_zones.get(zone_str, -1)
+                if level != old:
+                    _send_zone(int(zone_str), level)
+                    _current_zones[zone_str] = level
 
-    # Motoren nach 5 Sekunden zurücksetzen
-    time.sleep(5)
-    _clear_zones()
-
-# ── Audio / Sprache ───────────────────────────────────────────────────────────
-def speak_async(text, speed=145):
-    try:
-        subprocess.Popen(
-            ['espeak', '-s', str(speed), text],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-    except FileNotFoundError:
-        pass
-
-def speak(text):
-    if not ELEVENLABS_KEY:
-        speak_async(text)
-        return
-    subprocess.run([
-        "curl", "-s", "-X", "POST",
-        f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}",
-        "-H", f"xi-api-key: {ELEVENLABS_KEY}",
-        "-H", "Content-Type: application/json",
-        "-d", json.dumps({"text": text, "model_id": "eleven_monolingual_v1",
-                          "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}}),
-        "-o", "/tmp/navi_reply.mp3"
-    ])
-    subprocess.run(["mpg123", "-q", "/tmp/navi_reply.mp3"])
+            # Log
+            active = {z: l for z, l in _current_zones.items() if l > 0}
+            if active:
+                labels = {"0": "MITTE", "1": "RECHTS", "2": "LINKS"}
+                parts  = [f"{labels[z]}:{l}" for z, l in active.items()]
+                print(f"Gefahr: {' | '.join(parts)}")
+            else:
+                print("Klar.")
 
 # ── Start ─────────────────────────────────────────────────────────────────────
 _init_arduino()
-print("Navi bereit.")
-print("Enter drücken → Kamera scannt → Motoren vibrieren")
-print("-" * 50)
+_init_camera()
 
-while True:
-    try:
-        input("[ Enter drücken ]")
-        analyze_and_vibrate()
-    except KeyboardInterrupt:
-        _clear_zones()
-        print("Tschüss!")
-        break
-    except Exception as e:
-        print(f"Fehler: {e}")
+# Scanner-Thread starten
+threading.Thread(target=_scan_loop, daemon=True).start()
+
+print("Navi läuft. Ctrl+C zum Beenden.")
+print("-" * 40)
+
+try:
+    while True:
+        time.sleep(1)
+except KeyboardInterrupt:
+    _clear_all_zones()
+    if _cap:
+        _cap.release()
+    print("Beendet.")
