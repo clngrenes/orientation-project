@@ -238,7 +238,6 @@ while True:
 
         # Pause haptic alerts on request
         if is_pause_request(text):
-            global haptic_paused_until
             haptic_paused_until = time.time() + PAUSE_DURATION
             reply = f"Alerts paused for {PAUSE_DURATION} seconds."
             print(f"Navi: {reply}")
