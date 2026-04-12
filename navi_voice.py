@@ -12,11 +12,16 @@ import subprocess
 import base64
 import os
 import time
+import threading
 
 ELEVENLABS_KEY = "YOUR_ELEVENLABS_KEY_HERE"
 OPENAI_KEY     = "YOUR_OPENAI_KEY_HERE"
 VOICE_ID       = "21m00Tcm4TlvDq8ikWAM"  # Rachel
 OPENCLAW_URL   = "http://46.224.48.111:5001/chat"
+ANALYZE_URL    = "http://46.224.48.111:5001/analyze"
+ARDUINO_PORT   = "/dev/ttyACM0"
+SCAN_INTERVAL  = 3   # seconds between camera scans
+ZONE_EXPIRY    = 6   # seconds until a zone auto-clears if not re-detected
 
 # Keywords that pause haptic alerts (e.g. during conversations)
 PAUSE_KEYWORDS = [
@@ -27,6 +32,78 @@ PAUSE_KEYWORDS = [
 PAUSE_DURATION = 30  # seconds
 
 haptic_paused_until = 0.0
+
+# ── Arduino serial ────────────────────────────────────────────────────────────
+_arduino = None
+_arduino_lock = threading.Lock()
+
+def _init_arduino():
+    global _arduino
+    try:
+        import serial
+        _arduino = serial.Serial(ARDUINO_PORT, 9600, timeout=1)
+        time.sleep(2)  # wait for Arduino reset
+        print("Arduino connected.")
+    except Exception as e:
+        print(f"Arduino not available: {e}")
+
+def _send_zone(zone, level):
+    with _arduino_lock:
+        if _arduino and _arduino.is_open:
+            try:
+                _arduino.write(f"ZONE:{zone}:{level}\n".encode())
+            except Exception:
+                pass
+
+# ── Continuous camera scanning ────────────────────────────────────────────────
+_active_zones = {}   # zone_id → (level, expiry_timestamp)
+_zones_lock   = threading.Lock()
+
+def _camera_scan_loop():
+    """Background thread: scans with camera every SCAN_INTERVAL seconds."""
+    while True:
+        time.sleep(SCAN_INTERVAL)
+        try:
+            if haptic_paused_until > 0 and time.time() < haptic_paused_until:
+                continue  # haptic paused — skip
+            img = capture_photo()
+            if not img:
+                continue
+            data = json.dumps({"image": img}).encode()
+            req  = urllib.request.Request(
+                ANALYZE_URL, data=data,
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=15) as r:
+                result = json.load(r)
+
+            zones  = result.get("zones", {})
+            speech = result.get("speech", "")
+            now    = time.time()
+
+            with _zones_lock:
+                for zone_str, level in zones.items():
+                    zone = int(zone_str)
+                    old  = _active_zones.get(zone, (0, 0))[0]
+                    if level > 0:
+                        _active_zones[zone] = (level, now + ZONE_EXPIRY)
+                        _send_zone(zone, level)
+                        if level == 3 and old < 3:
+                            speak_async("Stop", speed=160)
+                    else:
+                        if old > 0:
+                            _active_zones[zone] = (0, 0)
+                            _send_zone(zone, 0)
+
+                # Clear expired zones
+                for zone in list(_active_zones.keys()):
+                    lvl, expiry = _active_zones[zone]
+                    if lvl > 0 and expiry < now:
+                        _active_zones[zone] = (0, 0)
+                        _send_zone(zone, 0)
+
+        except Exception as e:
+            print(f"Camera scan error: {e}")
 
 # Keywords that trigger the camera
 VISION_KEYWORDS = [
@@ -135,7 +212,11 @@ def speak(text):
     ])
     subprocess.run(["mpg123", "-q", "/tmp/navi_reply.mp3"])
 
+_init_arduino()
+threading.Thread(target=_camera_scan_loop, daemon=True).start()
+
 print("Navi is ready. Connected to OpenClaw.")
+print("Camera scanning active — motors respond to detected dangers.")
 print("Press Enter to start speaking, then Enter again to stop.")
 print("-" * 50)
 
