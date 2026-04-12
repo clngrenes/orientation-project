@@ -680,6 +680,117 @@ User spoke in English → Navi transcribed, sent to Hetzner, got AI response, sp
 
 ---
 
+## Step 23 — Arduino Nano Every Flashing + Hardware Assembly (12.04.2026)
+
+**Goal:** Flash updated motor_controller.ino firmware to the Arduino Nano Every and test all motors and sensors with the final soldered wiring.
+
+**Arduino Nano Every (not UNO):**
+
+The project switched from Arduino UNO to **Arduino Nano Every** (ATmega4809) for the smaller form factor needed in the collar. This required a different flashing process — the Nano Every uses UPDI (Unified Program and Debug Interface), not standard ISP.
+
+**avrdude flashing problem — root cause and fix:**
+
+arduino-cli uploads to the Nano Every using avrdude 6.3.0-arduino17 with the `jtag2updi` programmer. The bundled avrdude.conf was missing a required `"boot"` memory section for the ATmega4809 chip entry. avrdude's `jtagmkII_initialize()` requires BOTH `"flash"` AND `"boot"` sections present in the chip description — without `"boot"`, it immediately aborts with:
+
+```
+jtagmkII_initialize(): Cannot locate "flash" and "boot" memories in description
+```
+
+**Fix:** Python script to patch the conf file at runtime — finds the ATmega4809 entry by line, locates the end of its `part` block, and inserts a minimal `"boot"` memory section before the closing `;`:
+
+```python
+lines = open('.../avrdude.conf').readlines()
+m4809 = next(i for i,l in enumerate(lines) if '"m4809"' in l)
+end = next(i for i in range(m4809, m4809+80) if lines[i].strip() == ';' and not lines[i].startswith(' '))
+boot = ['    memory "boot"\n','        size = 0xC000;\n','        offset = 0x4000;\n',
+        '        page_size = 0x80;\n','        readsize = 0x100;\n','    ;\n','\n']
+open('/tmp/avrdude_patched.conf', 'w').writelines(lines[:end] + boot + lines[end:])
+```
+
+Patched conf copied over the original, then arduino-cli upload used the patched conf automatically. The `RSP_ILLEGAL_PARAMETER` warnings that appeared during upload are harmless — avrdude still proceeds and flashes successfully.
+
+**arduino:megaavr core installed on Pi:**
+```bash
+arduino-cli core install arduino:megaavr
+```
+
+**Confirmed wiring (soldered with Anna, 12.04.2026):**
+
+| Component | Pin |
+|---|---|
+| DFNinja motor (Front) | D9 |
+| DFNinja motor (Back) | D12 |
+| Coin motor FR | D2 |
+| Coin motor FL | D7 |
+| Coin motor BL | D4 |
+| Coin motor BR | D6 |
+| VL53L0X XSHUT Sensor 0 | D11 |
+| VL53L0X XSHUT Sensor 1 | D5 |
+| VL53L0X SDA | A4 |
+| VL53L0X SCL | A5 |
+
+**Motor test results:**
+
+All 6 vibration motors confirmed working via serial commands (`ZONE:X:3`):
+- ✅ Zone 0 — DFNinja Front (D9)
+- ✅ Zone 1 — Coin FR (D2)
+- ✅ Zone 2 — Coin FL (D7)
+- ✅ Zone 3 — Coin BL (D4)
+- ✅ Zone 4 — Coin BR (D6)
+- ✅ Zone 5 — DFNinja Back (D12)
+
+**VL53L0X sensor results:**
+
+Both sensors report `DEBUG: Sensor 0 FAILED` and `DEBUG: Sensor 1 FAILED`. Root cause: I2C bus (SDA/SCL) not properly connected. The sensors power up (5V confirmed) but don't respond on I2C. Wire check needed: SDA → A4, SCL → A5 must be verified. Distance sensors skipped for this session — motor feedback continues to work without them.
+
+**Serial monitor tool:** `screen /dev/ttyACM0 9600` (installed via apt) used for live Arduino output. Commands typed directly in screen session.
+
+---
+
+## Step 24 — Directional Camera-Based Motor Control (12.04.2026)
+
+**Goal:** Instead of all motors vibrating simultaneously when a danger is detected, the motor(s) matching the direction of the danger should vibrate — left obstacle → left motor, right obstacle → right motor, center → front motor.
+
+**Architecture:**
+
+Two changes required:
+1. **navi_api.py** (Hetzner): New `/analyze` endpoint — takes an image, asks Gemini to return structured JSON with per-zone danger levels
+2. **navi_voice.py** (Pi): Background thread continuously scans with camera every 3 seconds, calls `/analyze`, sends targeted ZONE commands to Arduino via serial
+
+**navi_api.py — `/analyze` endpoint:**
+
+New POST route at `/analyze` accepts `{"image": "BASE64_JPEG"}`. Sends image to Gemini 2.5 Flash with a specialized prompt instructing it to return ONLY valid JSON:
+
+```json
+{"speech": "one sentence about danger", "zones": {"0": N, "1": N, "2": N}}
+```
+
+Zone mapping: `"0"` = center/front, `"1"` = right side, `"2"` = left side. Threat level N: 0=safe, 1=notice, 2=warning, 3=danger. Handles Gemini wrapping output in markdown code fences (strips ` ```json ` prefix). Falls back to all-zeros on parse error — never crashes.
+
+**navi_voice.py — background camera scan loop:**
+
+- Arduino connection via `pyserial` (`serial.Serial("/dev/ttyACM0", 9600)`)
+- Daemon thread starts at boot alongside voice loop
+- Every 3 seconds: capture photo → POST to `/analyze` → parse zones → send `ZONE:X:Y` commands
+- Zone expiry: each detected zone has a 6-second TTL — if not re-detected, motor resets to 0
+- Extreme danger (level 3, new detection): `speak_async("Stop")` fires immediately
+- Haptic pause respected: scan loop skips motor commands during pause window
+- Arduino and voice loop are independent — voice interaction continues normally during scanning
+
+**Zone-to-motor mapping:**
+
+| Gemini zone | Direction | Motor |
+|---|---|---|
+| "0" | Center/front | Zone 0 (DFNinja Front, D9) |
+| "1" | Right | Zone 1 (Coin FR, D2) |
+| "2" | Left | Zone 2 (Coin FL, D7) |
+
+**Deploy:**
+- navi_api.py → Hetzner via `git pull + systemctl restart`
+- navi_voice.py → Pi via `git pull + pip3 install pyserial + python3 navi_voice.py`
+
+---
+
 ## Open Questions (not yet resolved)
 
 - Is silence alone sufficient as the "safe/active" signal, or do users need a periodic heartbeat to trust the system is on?
