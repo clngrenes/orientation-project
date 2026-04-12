@@ -138,10 +138,11 @@ def _scan_loop():
             print(f"Scan-Fehler: {e}")
             continue
 
-        zones = result.get("zones", {})   # {"0": N, "1": N, "2": N}
+        zones  = result.get("zones", {})
+        speech = result.get("speech", "")
+        print(f"Gemini: {zones}  speech='{speech}'")
 
         with _scan_lock:
-            # Alle 3 Frontzonen aktualisieren
             for zone_str in ["0", "1", "2"]:
                 level = int(zones.get(zone_str, 0))
                 old   = _current_zones.get(zone_str, -1)
@@ -149,14 +150,13 @@ def _scan_loop():
                     _send_zone(int(zone_str), level)
                     _current_zones[zone_str] = level
 
-            # Log
             active = {z: l for z, l in _current_zones.items() if l > 0}
             if active:
                 labels = {"0": "MITTE", "1": "RECHTS", "2": "LINKS"}
                 parts  = [f"{labels[z]}:{l}" for z, l in active.items()]
-                print(f"Gefahr: {' | '.join(parts)}")
+                print(f">>> Motoren: {' | '.join(parts)}")
             else:
-                print("Klar.")
+                print("--- Klar, alle Motoren aus")
 
 # ── Start ─────────────────────────────────────────────────────────────────────
 _init_arduino()

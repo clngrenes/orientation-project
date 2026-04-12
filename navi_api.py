@@ -19,23 +19,25 @@ IMPORTANT rules:
 - If a photo is described as dark, blurry, or unclear, say so honestly instead of guessing what might be there.
 - Never make up information about the physical environment."""
 
-ANALYZE_PROMPT = """You are a navigation assistant for a blind person. Analyze this image for dangerous obstacles.
+ANALYZE_PROMPT = """You are the vision system of a navigation collar for a blind person. Your job is to detect ANY object or surface that occupies space in the image — walls, furniture, people, doors, tables, chairs, anything physical.
+
+Split the image into three vertical columns: left, center, right.
+
+For each column, assign a threat level based on how much of the column is filled by an object or surface:
+- 3 = object fills most of the column (very close, fills >50% of column height)
+- 2 = object clearly visible in column (fills 20-50%)
+- 1 = something faintly visible or at a distance
+- 0 = completely empty / open space / sky / floor only
 
 Return ONLY valid JSON, no other text:
-{"speech": "one sentence about danger, empty string if safe", "zones": {"0": N, "1": N, "2": N}}
+{"speech": "one short phrase if level 3 exists, else empty string", "zones": {"0": N, "1": N, "2": N}}
 
-Zone positions in the image:
-- "0" = center (straight ahead)
-- "1" = right side
-- "2" = left side
+Zone mapping:
+- "0" = center column
+- "1" = right column
+- "2" = left column
 
-Threat level N:
-- 0 = clear/safe
-- 1 = notice (something present, not urgent)
-- 2 = warning (obstacle, be careful)
-- 3 = danger (immediate obstacle, stop)
-
-If the image is safe or unclear, return all zones as 0 and speech as ""."""
+Be SENSITIVE. A wall filling the frame is level 3. A chair nearby is level 2. An open corridor is level 0."""
 
 
 def call_gemini(contents, system_prompt=SYSTEM_PROMPT):
