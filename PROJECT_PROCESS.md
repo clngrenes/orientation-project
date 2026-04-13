@@ -747,7 +747,36 @@ Both sensors report `DEBUG: Sensor 0 FAILED` and `DEBUG: Sensor 1 FAILED`. Root 
 
 ---
 
-## Step 24 — Directional Camera-Based Motor Control (12.04.2026)
+## Step 24 — Architektur-Korrektur: YOLOv8 für Motoren, Gemini nur für Sprache (13.04.2026)
+
+**Fehler erkannt und korrigiert:**
+
+Zwischenzeitlich wurde versucht, Gemini für die kontinuierliche Kamera-Motorsteuerung zu nutzen (/analyze Endpoint). Das war falsch — Gemini ist langsam, teuer und unnötig für diese Aufgabe.
+
+**Korrekte Architektur:**
+
+| Datei | Aufgabe | Technologie |
+|---|---|---|
+| `sensor_bridge.py` | Dauerhaft laufend, erkennt Objekte, steuert Motoren | YOLOv8 (lokal, kostenlos, schnell) |
+| `navi_voice.py` | Nur wenn User fragt (Enter drücken) | Gemini/OpenClaw für Sprachantwort |
+
+**sensor_bridge.py läuft so:**
+```bash
+python3 sensor_bridge.py --serial-port /dev/ttyACM0 --no-display
+```
+
+Zonenmapping (aus X-Position des erkannten Objekts):
+- cx < 0.40 → Zone 2 (FL, links)
+- cx 0.40–0.60 → Zone 0 (F, mitte)
+- cx > 0.60 → Zone 1 (FR, rechts)
+
+**navi_voice.py** wurde auf reine Sprachfunktion zurückgesetzt — kein kontinuierlicher Kamerascan, kein Gemini für Bewegungserkennung.
+
+**Key-Management dauerhaft gelöst:** Keys liegen in `~/.navi_config` auf dem Pi (gitignored) und als Umgebungsvariable auf Hetzner — kein `sed` nach jedem `git pull` mehr nötig.
+
+---
+
+## Step 24b — Directional Camera-Based Motor Control (12.04.2026)
 
 **Goal:** Instead of all motors vibrating simultaneously when a danger is detected, the motor(s) matching the direction of the danger should vibrate — left obstacle → left motor, right obstacle → right motor, center → front motor.
 
