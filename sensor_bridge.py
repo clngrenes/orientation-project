@@ -998,17 +998,28 @@ def main():
                 frame_f = _f if _f is not None else make_test_frame(frame_count, 'FRONT')
                 frame_b = read_frame(cap_back)  if cap_back is not None else None
 
-            # ── Inference — front ─────────────────────────────────────────
-            stable_f, all_f = pipeline_front.detect(frame_f)
-            stair_f = stairs_front.update(frame_f) if frame_count % 3 == 0 \
-                      else stairs_front.detected
+            # ── Inference — front (every 3rd frame, cache result) ────────
+            if frame_count % 3 == 0:
+                stable_f, all_f = pipeline_front.detect(frame_f)
+                stair_f = stairs_front.update(frame_f)
+            # else: reuse cached values from pipeline (already stored internally)
+            else:
+                stable_f = pipeline_front._last_stable if hasattr(pipeline_front, '_last_stable') else []
+                all_f    = []
+                stair_f  = stairs_front.detected
+            if frame_count % 3 == 0:
+                pipeline_front._last_stable = stable_f
 
-            # ── Inference — back (every 2nd frame to save CPU) ────────────
+            # ── Inference — back (every 4th frame, cache result) ──────────
             stable_b, all_b, stair_b = [], [], False
-            if frame_b is not None and frame_count % 2 == 0:
-                stable_b, all_b = pipeline_back.detect(frame_b)
-                stair_b = stairs_back.update(frame_b) if frame_count % 6 == 0 \
-                          else stairs_back.detected
+            if frame_b is not None:
+                if frame_count % 4 == 0:
+                    stable_b, all_b = pipeline_back.detect(frame_b)
+                    stair_b = stairs_back.update(frame_b)
+                    pipeline_back._last_stable = stable_b
+                else:
+                    stable_b = pipeline_back._last_stable if hasattr(pipeline_back, '_last_stable') else []
+                    stair_b  = stairs_back.detected
 
             # ── ToF ───────────────────────────────────────────────────────
             # Read real TOF from Arduino serial if connected, else use mock
