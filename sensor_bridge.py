@@ -72,7 +72,7 @@ STABILITY_MAX     = 10
 STABILITY_DECAY   = 2   # frames subtracted per missing frame
 
 # Frame skip for dashboard streaming (every Nth frame)
-FRAME_SEND_INTERVAL = 5
+FRAME_SEND_INTERVAL = 3
 
 # Zone IDs matching Arduino protocol (6 motors)
 # F=DFRobot front, FR/FL=coin front-right/left, BL/BR=coin back-left/right, B=DFRobot back
@@ -280,7 +280,7 @@ class DetectionPipeline:
         h, w     = frame.shape[:2]
         total_px = w * h
 
-        results = self.model(frame, conf=self.conf, verbose=False)
+        results = self.model(frame, conf=self.conf, verbose=False, imgsz=320)
         boxes   = results[0].boxes
 
         seen_now   = set()
@@ -723,8 +723,8 @@ def open_camera(index, label='camera'):
     if not cap.isOpened():
         print(f'[{label}] WARNING: Could not open camera {index}')
         return None
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  320)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
     print(f'[{label}] Camera {index} ready '
           f'({int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}×'
           f'{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))})')
