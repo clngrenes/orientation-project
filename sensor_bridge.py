@@ -590,17 +590,19 @@ class SensorFusion:
         # Back sensor → DFRobot back motor
         zones['b']  = tof_zone('back',  back_mm)
 
-        # Front camera → nur DFNinja Front (zone f)
+        # Front camera → Coin FL + FR (zone fl, fr) — level immer auf danger für starke Vibration
         for det in front_dets:
             if det['level'] == 'safe':
                 continue
-            self._upgrade(zones, 'f', det['level'], 'camera')
+            self._upgrade(zones, 'fl', 'danger', 'camera')
+            self._upgrade(zones, 'fr', 'danger', 'camera')
 
-        # Back camera → nur DFNinja Back (zone b)
+        # Back camera → Coin BL + BR (zone bl, br)
         for det in back_dets:
             if det['level'] == 'safe':
                 continue
-            self._upgrade(zones, 'b', det['level'], 'camera')
+            self._upgrade(zones, 'bl', 'danger', 'camera')
+            self._upgrade(zones, 'br', 'danger', 'camera')
 
         return zones
 
@@ -942,14 +944,14 @@ def main():
             if cap_back is None:
                 print('[bridge] Back camera unavailable')
 
-    # ── Startup: nur DFNinja Front(0) + Back(5) 3x vibrieren ─────────────
-    print('[bridge] Startup check — DFNinja Front + Back 3x...')
+    # ── Startup: Coin-Motoren FL(2)+FR(1)+BL(3)+BR(4) 3x vibrieren ──────
+    print('[bridge] Startup check — Coin-Motoren 3x...')
     for _ in range(3):
-        arduino._tx('ZONE:0:3')
-        arduino._tx('ZONE:5:3')
+        for z in [1, 2, 3, 4]:
+            arduino._tx(f'ZONE:{z}:3')
         time.sleep(0.5)
-        arduino._tx('ZONE:0:0')
-        arduino._tx('ZONE:5:0')
+        for z in [1, 2, 3, 4]:
+            arduino._tx(f'ZONE:{z}:0')
         time.sleep(0.3)
     arduino._last_zones = {}  # reset damit normale Zonenverwaltung sauber startet
     speak_async("Navi ready")
