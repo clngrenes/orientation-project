@@ -958,8 +958,16 @@ def main():
             if cap_back is None:
                 print('[bridge] Back camera unavailable')
 
-    # ── Startup: haptic + sound simultaneously ────────────────────────────
-    arduino.send_system(0)
+    # ── Startup: alle 6 Motoren 3x stark vibrieren ───────────────────────
+    print('[bridge] Startup check — alle Motoren 3x...')
+    for _ in range(3):
+        for z in range(6):
+            arduino._tx(f'ZONE:{z}:3')
+        time.sleep(0.5)
+        for z in range(6):
+            arduino._tx(f'ZONE:{z}:0')
+        time.sleep(0.3)
+    arduino._last_zones = {}  # reset damit normale Zonenverwaltung sauber startet
     speak_async("Navi ready")
     print('\n[bridge] Running.  Ctrl+C or Q to quit.\n')
 
