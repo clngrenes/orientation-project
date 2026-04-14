@@ -856,11 +856,26 @@ def make_socket_client(server_url, role, arduino=None):
         def on_cmd(data):
             t = data.get('type')
             if t == 'manual-zone':
-                zone  = data.get('zone', 'front')
+                zone  = data.get('zone', 0)
                 level = data.get('level', 0)
-                arduino._tx(f'ZONE {ZONE_IDS.get(zone, 0)} {level}')
+                # zone can be int (new dashboard) or string (old dashboard)
+                if isinstance(zone, str):
+                    zone = ZONE_IDS.get(zone, 0)
+                arduino._tx(f'ZONE:{zone}:{level}')
+                print(f'[dashboard] Motor {zone} → level {level}')
+            elif t == 'serial-cmd':
+                cmd = data.get('cmd', '')
+                if cmd in ('BEAT', 'STAIR'):
+                    arduino._tx(cmd)
+                    print(f'[dashboard] Sent {cmd}')
             elif t == 'sys':
-                arduino.send_system(data.get('patternId', 0))
+                pid = data.get('patternId', 0)
+                if pid == 0:
+                    arduino._tx('BEAT')
+                elif pid == 1:
+                    arduino._tx('BEAT')
+                elif pid == 2:
+                    arduino._tx('STAIR')
             elif t == 'set-mode':
                 print(f'[bridge] Mode → {data.get("mode")}')
 
