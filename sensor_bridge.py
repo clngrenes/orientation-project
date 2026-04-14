@@ -590,33 +590,17 @@ class SensorFusion:
         # Back sensor → DFRobot back motor
         zones['b']  = tof_zone('back',  back_mm)
 
-        # Front camera → refines f / fl / fr based on object position in frame
+        # Front camera → nur DFNinja Front (zone f)
         for det in front_dets:
             if det['level'] == 'safe':
                 continue
-            cx = det.get('centerX', 0.5)
-            if cx < 0.40:
-                # Object on left side of frame → front-left coin
-                self._upgrade(zones, 'fl', det['level'], 'camera')
-            elif cx > 0.60:
-                # Object on right side of frame → front-right coin
-                self._upgrade(zones, 'fr', det['level'], 'camera')
-            else:
-                # Object centered → DFRobot front (strongest signal = "STOP")
-                self._upgrade(zones, 'f',  det['level'], 'camera')
+            self._upgrade(zones, 'f', det['level'], 'camera')
 
-        # Back camera → refines b / bl / br (camera mounted reversed)
+        # Back camera → nur DFNinja Back (zone b)
         for det in back_dets:
             if det['level'] == 'safe':
                 continue
-            cx = det.get('centerX', 0.5)
-            if cx < 0.35:
-                # Reversed: left in image = right on body
-                self._upgrade(zones, 'br', det['level'], 'camera')
-            elif cx > 0.65:
-                self._upgrade(zones, 'bl', det['level'], 'camera')
-            else:
-                self._upgrade(zones, 'b',  det['level'], 'camera')
+            self._upgrade(zones, 'b', det['level'], 'camera')
 
         return zones
 
@@ -958,14 +942,14 @@ def main():
             if cap_back is None:
                 print('[bridge] Back camera unavailable')
 
-    # ── Startup: alle 6 Motoren 3x stark vibrieren ───────────────────────
-    print('[bridge] Startup check — alle Motoren 3x...')
+    # ── Startup: nur DFNinja Front(0) + Back(5) 3x vibrieren ─────────────
+    print('[bridge] Startup check — DFNinja Front + Back 3x...')
     for _ in range(3):
-        for z in range(6):
-            arduino._tx(f'ZONE:{z}:3')
+        arduino._tx('ZONE:0:3')
+        arduino._tx('ZONE:5:3')
         time.sleep(0.5)
-        for z in range(6):
-            arduino._tx(f'ZONE:{z}:0')
+        arduino._tx('ZONE:0:0')
+        arduino._tx('ZONE:5:0')
         time.sleep(0.3)
     arduino._last_zones = {}  # reset damit normale Zonenverwaltung sauber startet
     speak_async("Navi ready")
