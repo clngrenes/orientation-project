@@ -80,8 +80,8 @@ ZONE_IDS  = {'f': 0, 'fr': 1, 'fl': 2, 'bl': 3, 'br': 4, 'b': 5,
              'front': 0}   # backward-compat alias for dashboard
 LEVEL_IDS = {'safe': 0, 'notice': 1, 'warning': 2, 'danger': 3}
 
-# Sensor index → direction name (2 sensors: D11=front, D5=back)
-TOF_MAP = {0: 'front', 1: 'back'}
+# Sensor index → direction name (2 sensors: D11=back, D5=front — physically swapped)
+TOF_MAP = {0: 'back', 1: 'front'}
 
 # COCO class labels relevant to outdoor navigation
 LABELS = {
