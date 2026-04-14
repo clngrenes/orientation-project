@@ -29,6 +29,7 @@ import random
 import subprocess
 import sys
 import time
+import threading
 from collections import defaultdict
 
 import cv2
@@ -265,12 +266,51 @@ class DetectionPipeline:
 
         self._stability = defaultdict(int)
 
+        # Threaded inference — YOLO runs in background, main loop never blocks
+        self._lock         = threading.Lock()
+        self._latest_frame = None
+        self._stable_out   = []
+        self._all_out      = []
+        self._last_stable  = []
+        self._running      = True
+        self._thread       = threading.Thread(target=self._inference_loop, daemon=True)
+        self._thread.start()
+
+    def _inference_loop(self):
+        while self._running:
+            with self._lock:
+                frame = self._latest_frame
+                self._latest_frame = None
+            if frame is None:
+                time.sleep(0.005)
+                continue
+            stable, all_d = self._run(frame)
+            with self._lock:
+                self._stable_out  = stable
+                self._all_out     = all_d
+                self._last_stable = stable
+
+    def push_frame(self, frame):
+        """Give the inference thread a new frame (non-blocking)."""
+        with self._lock:
+            self._latest_frame = frame
+
+    def get_results(self):
+        """Return latest cached results (non-blocking)."""
+        with self._lock:
+            return list(self._stable_out), list(self._all_out)
+
     @property
     def yolo_model(self):
         """Expose model for sharing with a second pipeline."""
         return self.model
 
     def detect(self, frame):
+        """Legacy sync detect — push frame and return cached results."""
+        self.push_frame(frame)
+        return self.get_results()
+
+    def _run(self, frame):
         """
         Run inference on a BGR frame.
         Returns (stable_detections, all_detections).
@@ -998,28 +1038,18 @@ def main():
                 frame_f = _f if _f is not None else make_test_frame(frame_count, 'FRONT')
                 frame_b = read_frame(cap_back)  if cap_back is not None else None
 
-            # ── Inference — front (every 3rd frame, cache result) ────────
-            if frame_count % 3 == 0:
-                stable_f, all_f = pipeline_front.detect(frame_f)
-                stair_f = stairs_front.update(frame_f)
-            # else: reuse cached values from pipeline (already stored internally)
-            else:
-                stable_f = pipeline_front._last_stable if hasattr(pipeline_front, '_last_stable') else []
-                all_f    = []
-                stair_f  = stairs_front.detected
-            if frame_count % 3 == 0:
-                pipeline_front._last_stable = stable_f
+            # ── Inference — threaded, non-blocking ───────────────────────
+            pipeline_front.push_frame(frame_f)
+            stable_f, all_f = pipeline_front.get_results()
+            stair_f = stairs_front.update(frame_f) if frame_count % 4 == 0 \
+                      else stairs_front.detected
 
-            # ── Inference — back (every 4th frame, cache result) ──────────
             stable_b, all_b, stair_b = [], [], False
             if frame_b is not None:
-                if frame_count % 4 == 0:
-                    stable_b, all_b = pipeline_back.detect(frame_b)
-                    stair_b = stairs_back.update(frame_b)
-                    pipeline_back._last_stable = stable_b
-                else:
-                    stable_b = pipeline_back._last_stable if hasattr(pipeline_back, '_last_stable') else []
-                    stair_b  = stairs_back.detected
+                pipeline_back.push_frame(frame_b)
+                stable_b, all_b = pipeline_back.get_results()
+                stair_b = stairs_back.update(frame_b) if frame_count % 6 == 0 \
+                          else stairs_back.detected
 
             # ── ToF ───────────────────────────────────────────────────────
             # Read real TOF from Arduino serial if connected, else use mock
