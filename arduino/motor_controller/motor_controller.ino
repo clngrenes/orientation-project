@@ -2,16 +2,16 @@
  * ORIENTATION — Motor Controller
  * 6 vibration motors + 2 VL53L0X distance sensors
  *
- * Confirmed wiring (soldered with Anna, 2026-04-11):
- *   DFNinja motors:   D9 (front), D12 (back)
- *   Coin motors:      D2, D4, D6, D7
+ * Confirmed wiring (soldered with Anna; D6/D9 swapped on board 2026-05):
+ *   DFNinja motors:   D6 (front), D12 (back)
+ *   Coin motors:      D2, D4, D9, D7
  *   VL53L0X XSHUT:   D5, D11
  *
  * Motor layout on collar:
  *          FRONT
- *       [F — DFNinja]    pin 9
+ *       [F — DFNinja]    pin 6
  *   FL(coin)    FR(coin) pins 7, 2
- *   BL(coin)    BR(coin) pins 4, 6
+ *   BL(coin)    BR(coin) pins 4, 9
  *       [B — DFNinja]    pin 12
  *          BACK
  *
@@ -23,11 +23,11 @@
  *   BEAT        short pulse on F+FL+FR (heartbeat, system alive)
  *
  * Zone IDs:
- *   0 = F  (DFRobot Front,  pin 9)
+ *   0 = F  (DFRobot Front,  pin 6)
  *   1 = FR (Coin FrontRight, pin 2)
  *   2 = FL (Coin FrontLeft,  pin 7)
  *   3 = BL (Coin BackLeft,   pin 4)
- *   4 = BR (Coin BackRight,  pin 6)
+ *   4 = BR (Coin BackRight,  pin 9)
  *   5 = B  (DFRobot Back,   pin 12)
  *
  * Pulsing (non-blocking, millis-based):
@@ -42,7 +42,7 @@
 
 // ── Motors ──────────────────────────────────────────────────────────────────
 const int NUM_MOTORS = 6;
-const int MOTOR_PINS[NUM_MOTORS] = {9, 2, 7, 4, 6, 12};
+const int MOTOR_PINS[NUM_MOTORS] = {6, 2, 7, 4, 9, 12};
 // Zone:                            F  FR  FL  BL  BR   B
 
 // Pulse timing per level [period_ms, on_ms]
