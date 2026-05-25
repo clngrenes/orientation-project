@@ -5,7 +5,7 @@
  * Confirmed wiring (soldered with Anna; D6/D9 swapped on board 2026-05):
  *   DFNinja motors:   D6 (front), D12 (back)
  *   Coin motors:      D2, D4, D9, D7
- *   VL53L0X XSHUT:   D5, D11
+ *   VL53L0X XSHUT:   D8 (front), D11 (back)
  *
  * Motor layout on collar:
  *          FRONT
@@ -15,7 +15,7 @@
  *       [B — DFNinja]    pin 12
  *          BACK
  *
- * XSHUT pins for VL53L0X: D5, D11
+ * XSHUT pins for VL53L0X: D8 (sensor 1 front), D11 (sensor 0 back)
  *
  * Commands from Pi (serial, 9600 baud):
  *   ZONE:X:Y    X = motor zone 0-5, Y = level 0-3
@@ -56,7 +56,7 @@ bool          pulseOn[NUM_MOTORS]         = {false};
 
 // ── VL53L0X sensors ──────────────────────────────────────────────────────────
 const int NUM_SENSORS = 2;
-const int XSHUT_PINS[NUM_SENSORS]      = {11, 5};
+const int XSHUT_PINS[NUM_SENSORS]      = {11, 8};
 const uint8_t SENSOR_ADDRS[NUM_SENSORS] = {0x30, 0x31};
 VL53L0X sensors[NUM_SENSORS];
 bool    sensorOK[NUM_SENSORS];

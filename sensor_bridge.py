@@ -45,8 +45,8 @@ THREAT_LEVELS = ['safe', 'notice', 'warning', 'danger']
 
 # Camera threat thresholds — area ratio of bounding box relative to frame
 THRESHOLDS = {
-    'front': {'danger': 0.40, 'warning': 0.20, 'notice': 0.08},
-    'back':  {'danger': 0.50, 'warning': 0.32, 'notice': 0.15},  # back needs to be very close
+    'front': {'danger': 0.45, 'warning': 0.28, 'notice': 0.14},
+    'back':  {'danger': 0.55, 'warning': 0.35, 'notice': 0.20},  # back needs to be very close
 }
 
 # ToF distance thresholds in mm (used only when approaching)
@@ -81,7 +81,7 @@ ZONE_IDS  = {'f': 0, 'fr': 1, 'fl': 2, 'bl': 3, 'br': 4, 'b': 5,
              'front': 0}   # backward-compat alias for dashboard
 LEVEL_IDS = {'safe': 0, 'notice': 1, 'warning': 2, 'danger': 3}
 
-# Sensor index → direction name (2 sensors: D11=back, D5=front — physically swapped)
+# Sensor index → direction name (2 sensors: D11=back, D8=front)
 TOF_MAP = {0: 'back', 1: 'front'}
 
 # COCO class labels relevant to outdoor navigation
@@ -94,6 +94,23 @@ LABELS = {
     'skateboard': 'SKATEBOARD', 'potted plant': 'PLANT', 'couch': 'COUCH',
     'dining table': 'TABLE', 'traffic light': 'LIGHT', 'stop sign': 'SIGN',
 }
+
+# Low-priority static objects — need to be MUCH closer to trigger (indoor furniture etc.)
+LOW_PRIORITY_CLASSES = {
+    'chair', 'bench', 'dining table', 'potted plant', 'bottle',
+    'backpack', 'handbag', 'suitcase', 'couch', 'tv', 'laptop',
+    'mouse', 'keyboard', 'cell phone', 'book', 'cup',
+}
+
+# Low-priority threshold multiplier (2.5× = needs to be 2.5× closer/bigger)
+LOW_PRIORITY_MULT = 2.5
+
+
+def _downgrade_level(level):
+    """Step a threat level down by one notch."""
+    _order = {'danger': 'warning', 'warning': 'notice', 'notice': 'safe', 'safe': 'safe'}
+    return _order.get(level, 'safe')
+
 
 LEVEL_COLORS_BGR = {
     'safe':    (80,  175, 76),
@@ -251,7 +268,7 @@ class DetectionPipeline:
     Optionally shares a pre-loaded YOLO model to save RAM (important on Pi).
     """
 
-    def __init__(self, role='front', model_path='yolov8n.pt', conf=0.35,
+    def __init__(self, role='front', model_path='yolov8n.pt', conf=0.50,
                  shared_model=None):
         self.role  = role
         self.conf  = conf
@@ -338,7 +355,9 @@ class DetectionPipeline:
             box_bottom = y2 / h
 
             seen_now.add(cls_name)
-            level = self._area_to_level(area)
+            # Low-priority classes need much bigger bbox to trigger
+            effective_area = area / LOW_PRIORITY_MULT if cls_name in LOW_PRIORITY_CLASSES else area
+            level = self._area_to_level(effective_area)
 
             is_floor = (
                 (box_bottom > 0.45 or (box_bottom > 0.35 and (bh / h) < 0.25))
@@ -499,8 +518,8 @@ class DistanceTracker:
     This prevents false alarms when standing still near a person or obstacle.
     """
 
-    HISTORY = 4          # number of samples to keep per direction
-    STABLE_BAND = 60     # mm — within this band = "stable"
+    HISTORY = 60         # ~6-10 seconds at 6-10 FPS — enough for stability detection
+    STABLE_BAND = 80     # mm — within this band = "stable"
 
     def __init__(self):
         self._readings = {}   # direction → [(timestamp, mm), ...]
@@ -579,6 +598,47 @@ class DistanceTracker:
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# SCENE MEMORY — suppress objects that have been present continuously
+# ════════════════════════════════════════════════════════════════════════════
+
+class SceneMemory:
+    """Tracks how long each object class has been continuously detected.
+    After SUPPRESS_S seconds of constant presence, the object is considered
+    part of the environment (furniture, parked car, etc.) and gets downgraded."""
+
+    SUPPRESS_S = 10.0   # seconds before downgrading stable objects
+    FORGET_S   = 4.0    # seconds without seeing it before resetting
+
+    def __init__(self):
+        self._first_seen = {}   # class → timestamp of first continuous detection
+        self._last_seen  = {}   # class → timestamp of last detection
+
+    def update(self, detections):
+        """Call once per frame with the list of stable detections."""
+        now = time.time()
+        seen_now = {d['class'] for d in detections}
+
+        for cls in seen_now:
+            if cls not in self._first_seen:
+                self._first_seen[cls] = now
+            self._last_seen[cls] = now
+
+        # Forget classes not seen for FORGET_S
+        for cls in list(self._first_seen):
+            if cls not in seen_now and (now - self._last_seen.get(cls, 0)) > self.FORGET_S:
+                del self._first_seen[cls]
+                if cls in self._last_seen:
+                    del self._last_seen[cls]
+
+    def is_stable(self, cls_name):
+        """True if this class has been present for >= SUPPRESS_S seconds."""
+        first = self._first_seen.get(cls_name)
+        if first is None:
+            return False
+        return (time.time() - first) >= self.SUPPRESS_S
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # SENSOR FUSION
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -599,12 +659,47 @@ class SensorFusion:
 
     def __init__(self, tracker: 'DistanceTracker'):
         self._tracker = tracker
+        self._scene_front = SceneMemory()
+        self._scene_back  = SceneMemory()
+
+    def _smart_camera_level(self, det, scene_mem):
+        """Compute the actual threat level for a camera detection, considering:
+        - Low-priority classes (furniture, etc.) get downgraded
+        - Objects present for a long time get downgraded (scene memory)
+        - Objects at edges of frame (not in walking path) get downgraded
+        """
+        level = det['level']
+        if level == 'safe':
+            return 'safe'
+
+        # 1) Low-priority static objects (chairs, tables, etc.) → downgrade
+        if det['class'] in LOW_PRIORITY_CLASSES:
+            level = _downgrade_level(level)
+            if level == 'safe':
+                return 'safe'
+
+        # 2) Scene memory: object been there for 10+ seconds → downgrade
+        if scene_mem.is_stable(det['class']):
+            level = _downgrade_level(level)
+            if level == 'safe':
+                return 'safe'
+
+        # 3) Edge of frame: not in walking path → downgrade
+        cx = det.get('centerX', 0.5)
+        if cx < 0.20 or cx > 0.80:
+            level = _downgrade_level(level)
+
+        return level
 
     def fuse(self, front_dets, back_dets, tof_data):
         """Returns dict: zone_name → {level, distance_mm, source, velocity}"""
         safe = lambda mm: {'level': 'safe', 'distance_mm': mm, 'source': 'none', 'velocity': 0.0}
 
         zones = {z: safe(2000) for z in ('f', 'fr', 'fl', 'bl', 'br', 'b')}
+
+        # Update scene memory
+        self._scene_front.update(front_dets)
+        self._scene_back.update(back_dets)
 
         # Seed from ToF sensors — velocity-adjusted levels
         front_mm = tof_data.get('front', 2000)
@@ -630,19 +725,33 @@ class SensorFusion:
         # Back sensor → DFRobot back motor
         zones['b']  = tof_zone('back',  back_mm)
 
-        # Front camera → Coin FL + FR (zone fl, fr) — level immer auf danger für starke Vibration
+        # Front camera → FL / FR based on object position + smart level
         for det in front_dets:
-            if det['level'] == 'safe':
+            level = self._smart_camera_level(det, self._scene_front)
+            if level == 'safe':
                 continue
-            self._upgrade(zones, 'fl', 'danger', 'camera')
-            self._upgrade(zones, 'fr', 'danger', 'camera')
+            cx = det.get('centerX', 0.5)
+            if cx < 0.38:
+                self._upgrade(zones, 'fl', level, 'camera')
+            elif cx > 0.62:
+                self._upgrade(zones, 'fr', level, 'camera')
+            else:
+                self._upgrade(zones, 'fl', level, 'camera')
+                self._upgrade(zones, 'fr', level, 'camera')
 
-        # Back camera → Coin BL + BR (zone bl, br)
+        # Back camera → BL / BR based on object position + smart level
         for det in back_dets:
-            if det['level'] == 'safe':
+            level = self._smart_camera_level(det, self._scene_back)
+            if level == 'safe':
                 continue
-            self._upgrade(zones, 'bl', 'danger', 'camera')
-            self._upgrade(zones, 'br', 'danger', 'camera')
+            cx = det.get('centerX', 0.5)
+            if cx < 0.38:
+                self._upgrade(zones, 'bl', level, 'camera')
+            elif cx > 0.62:
+                self._upgrade(zones, 'br', level, 'camera')
+            else:
+                self._upgrade(zones, 'bl', level, 'camera')
+                self._upgrade(zones, 'br', level, 'camera')
 
         return zones
 
@@ -671,6 +780,8 @@ class ArduinoSerial:
         self._last_zones = {}
         self.connected   = False
         self._tof = {'front': 2000, 'left': 2000, 'right': 2000, 'back': 2000}
+        self._tof_ts = {'front': 0, 'left': 0, 'right': 0, 'back': 0}  # last update timestamp
+        self._TOF_STALE_S = 1.5  # reset to 2000 if no update for this long
 
         if port:
             try:
@@ -696,11 +807,16 @@ class ArduinoSerial:
                             if line.startswith(prefix):
                                 try:
                                     self._tof[direction] = int(line[len(prefix):])
-                                    print(f'[tof] {direction}={self._tof[direction]}mm')
+                                    self._tof_ts[direction] = time.time()
                                 except ValueError:
                                     pass
             except Exception:
                 pass
+        # Reset stale readings — if sensor hasn't reported in 1.5s, assume clear
+        now = time.time()
+        for direction in list(self._tof):
+            if self._tof[direction] < 2000 and (now - self._tof_ts[direction]) > self._TOF_STALE_S:
+                self._tof[direction] = 2000
         return dict(self._tof)
 
     def send_zones(self, zones):
@@ -730,7 +846,9 @@ class ArduinoSerial:
                 self._ser.write(line.encode())
             except Exception as e:
                 print(f'[arduino] TX error: {e}')
-        print(f'[serial] {cmd}')
+        # Only log non-zone commands or when debugging — ZONE spam floods terminal
+        if not cmd.startswith('ZONE:'):
+            print(f'[serial] {cmd}')
 
     def close(self):
         if self._ser:
@@ -978,8 +1096,11 @@ def main():
     if has_back_cam or args.test_mode and args.camera_back >= 0:
         sio_back, flag_back = make_socket_client(args.server, 'back')
 
+    # Each pipeline gets its own model copy — shared model is NOT thread-safe
     pipeline_front = DetectionPipeline(role='front', shared_model=shared_model)
-    pipeline_back  = DetectionPipeline(role='back',  shared_model=shared_model)
+    print('[bridge] Loading second YOLO model for back camera (thread safety)...')
+    back_model = YOLO('yolov8n.pt') if (has_back_cam or args.test_mode) else None
+    pipeline_back  = DetectionPipeline(role='back',  shared_model=back_model if back_model else shared_model)
     stairs_front   = StairDetector()
     stairs_back    = StairDetector()
     tracker        = DistanceTracker()
@@ -1085,8 +1206,8 @@ def main():
                 speak_async("Stop", speed=160)
                 last_danger_sound = now
 
-            # Heartbeat — every 5s so user knows system is running
-            if (now - last_beat) > 5.0:
+            # Heartbeat — every 30s (subtle alive check, not annoying)
+            if (now - last_beat) > 30.0:
                 arduino.send_beat()
                 last_beat = now
 
